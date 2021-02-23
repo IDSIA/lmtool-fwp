@@ -53,7 +53,12 @@ Please check files under `example_scripts` for general instructions and examples
 ## References
 If you make use of this toolkit for your experiments, please cite:
 ```
-Bib
+@article{schlag2021linear,
+      title={Linear Transformers Are Secretly Fast Weight Memory Systems}, 
+      author={Imanol Schlag and Kazuki Irie and Jürgen Schmidhuber},  
+      journal={Preprint arXiv:2102.11174},
+      year={2021}
+}
 ```
 
 The code for synthetic retrieval experiments can be found at [ischlag/fast-weight-transformers](https://github.com/ischlag/fast-weight-transformers).
