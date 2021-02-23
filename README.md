@@ -8,7 +8,7 @@ More generally, this can be used as a language modeling toolkit in PyTorch to ex
 * [Standard Transformers](https://arxiv.org/abs/1808.04444)
 * [Transformer-XL](https://arxiv.org/abs/1901.02860)
 * **Fast Weight Memory Systems** with different **update rules** and **linear attention functions**:
-    * Update rules: "sum" and "remove-and-insert" (as proposed in our paper; Sec 4.2)
+    * Update rules: "sum" and "ours" with removal (as proposed in our paper; Sec 4.2)
     * Linear attention functions: "ELU-based" linear attention, "FAVOR+", "deterministic parameter-free projection (DPFP)"
     
     e.g. some combinations result in well known models:
