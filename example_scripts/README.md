@@ -40,7 +40,7 @@ By default (recommended) a job name containing the corresponding hyper-parameter
 * All language modeling experiments were conducted using this toolkit:
 we gave different index/number to different combinations of
 linear attention types (standard Transformer, Linear, Performer, our DPFP) and update rules (sum vs. ours),
-which we can specify via `attn_type`.
+which we can specify via `attn_type`. See examples in [small_linear_fast_weight_memory.sh](https://github.com/IDSIA/lmtool-fwms/blob/master/example_scripts/small_linear_fast_weight_memory.sh)
 
 * We used flags to specify extra model variants such as the ones without the positional encoding (`no_pos`) or the attention normalisation (`skip_attn_normalization`), or training and evaluation without trucating the context (`carry_over_fast_weight`).
 
