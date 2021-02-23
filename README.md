@@ -1,7 +1,7 @@
 ## PyTorch Language Modeling Toolkit (for Fast Weight Memory Systems)
 
 This repository contains the official code used for language modeling experiments in the paper(s):
-* [Linear Transformers are Secretly Fast Weight Memory Systems]()
+* [Linear Transformers are Secretly Fast Weight Memory Systems](https://arxiv.org/abs/2102.11174)
 * ...
 
 More generally, this can be used as a language modeling toolkit in PyTorch to experiment with:
@@ -17,8 +17,8 @@ More generally, this can be used as a language modeling toolkit in PyTorch to ex
 
 ## Fast Weight Implementations
 This repositiory contains two implementations of fast weights.
-* Custom cuda kernel (see [utils/fast_fast_weight](https://github.com/kazuki-irie/draft-todel--repo-lm/tree/main/lmtool-fast-weight/utils/fast_fast_weight) and [utils/cuda_fast_weight_layer.py](https://github.com/kazuki-irie/draft-todel--repo-lm/blob/main/lmtool-fast-weight/utils/cuda_fast_weight_layer.py))
-* Custom `torch.autograd.Function` (see [utils/fast_weight.py](https://github.com/kazuki-irie/draft-todel--repo-lm/blob/main/lmtool-fast-weight/utils/fast_weight.py))
+* Custom cuda kernel (see [utils/fast_fast_weight](https://github.com/IDSIA/lmtool-fwms/tree/master/src/utils/fast_fast_weight) and [utils/cuda_fast_weight_layer.py](https://github.com/IDSIA/lmtool-fwms/blob/master/src/utils/cuda_fast_weight_layer.py))
+* Custom `torch.autograd.Function` (see [utils/fast_weight.py](https://github.com/IDSIA/lmtool-fwms/blob/master/src/utils/fast_weight.py))
 
 While we only used the cuda implementation for all our final experiments (faster/much better GPU utilization),
 `torch.autograd.Function` version can be useful for a quick prototyping with new extensions.
