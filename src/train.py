@@ -142,7 +142,7 @@ parser.add_argument('--finetune_v2', action='store_true',
                     help='finetune v2')
 parser.add_argument('--finetune_v3', action='store_true',
                     help='finetune v3')
-parser.add_argument('--performer_proj_dim', type=int, default=256,
+parser.add_argument('--performer_proj_dim', type=int, default=16,
                     help='projection dimension for performer layers.')
 parser.add_argument('--dpfp_n_roll', type=int, default=2,
                     help='number of rolls for dpfp attention layers.')
