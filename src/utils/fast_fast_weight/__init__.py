@@ -47,6 +47,9 @@ class FastWeightMemory(torch.autograd.Function):
         V_old = torch.zeros((N, H, L, M), device=device, dtype=Q.dtype)
         V_insert = torch.zeros((N, H, L, M), device=device, dtype=Q.dtype)
 
+        assert E * M <= 1024, ("Models with `d_head > 32` not supported"
+                               "in the current implementation (WIP).")
+
         # Actually perform the dot product
         FastWeightMemory.dot[device.type](
             Q.data,
