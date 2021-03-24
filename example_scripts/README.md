@@ -44,5 +44,3 @@ which we can specify via `attn_type`. See examples in [small_linear_fast_weight_
 
 * We used flags to specify extra model variants such as the ones without the positional encoding (`no_pos`) or the attention normalisation (`skip_attn_normalization`), or training and evaluation without trucating the context (`carry_over_fast_weight`).
 
-* Training can be instable for large models with our update rule. We are currently addressing this issue. Please stay tuned for future work.
-

@@ -1,4 +1,4 @@
-# Adaptation of the original code from 
+# Adaptation of the original code from
 # https://github.com/idiap/fast-transformers/blob/master/fast_transformers/causal_product/__init__.py
 # Copyright (c) 2020 Idiap Research Institute, http://www.idiap.ch/
 # Written by Angelos Katharopoulos <angelos.katharopoulos@idiap.ch>,
@@ -42,15 +42,11 @@ class FastWeightMemory(torch.autograd.Function):
         N, H, L, E = Q.shape
         _, _, _, M = V.shape
 
-        product = torch.zeros((N, H, L, M), device=device, dtype=Q.dtype)
+        out = torch.zeros((N, H, L, M), device=device, dtype=Q.dtype)
         # W = torch.zeros((N, H, E, M), device=device, dtype=Q.dtype)
         V_old = torch.zeros((N, H, L, M), device=device, dtype=Q.dtype)
         V_insert = torch.zeros((N, H, L, M), device=device, dtype=Q.dtype)
 
-        assert E * M <= 1024, ("Models with `d_head > 32` not supported"
-                               "in the current implementation (WIP).")
-
-        # Actually perform the dot product
         FastWeightMemory.dot[device.type](
             Q.data,
             K.data,
@@ -59,12 +55,12 @@ class FastWeightMemory(torch.autograd.Function):
             V_old,
             V_insert,
             W,
-            product
+            out
         )
 
         ctx.save_for_backward(Q, K, V, beta, V_old, V_insert, W)
 
-        return product
+        return out
 
     @staticmethod
     def backward(ctx, grad_out):
@@ -102,6 +98,7 @@ fast_weight_memory = FastWeightMemory.apply
 
 if __name__ == '__main__':
     import torch
+    torch.manual_seed(111)
     # Tests pass if the relative difference compared with
     # the corresponding torch autograd computation
     # is smaller than a threshold.
@@ -111,40 +108,52 @@ if __name__ == '__main__':
 
     # from https://github.com/idiap/fast-transformers/blob/master/tests/causal_product/test_causal_product_gpu.py
     def max_relative_error(a, b, eps=1e-6):
-        return torch.abs((a-b) / (torch.abs(a) + eps)).max().item()
+        return torch.abs((b - a) / (torch.abs(b) + eps)).max().item()
 
     print('##########################')
     print('# Test forward pass')
     print('##########################')
 
-    bsz, n_head, slen, d_head = 3, 5, 7, 11
-    v_dim = 4
+    bsz, n_head, slen, d_head = 3, 5, 11, 64
+    v_dim = 64
+
     # (B, H, len, dim)
-    q0 = torch.rand(3, 5, 7, 11).to(0)
-    k0 = torch.rand(3, 5, 7, 11).to(0)
-    v0 = torch.rand(3, 5, 7, 4).to(0)
-    beta0 = torch.sigmoid(torch.rand(3, 5, 7, 1).to(0))
+    q0 = torch.rand(bsz, n_head, slen, d_head, device='cuda')
+    k0 = torch.rand(bsz, n_head, slen, d_head, device='cuda')
+    v0 = torch.rand(bsz, n_head, slen, v_dim, device='cuda')
+    beta0 = torch.sigmoid(torch.rand(bsz, n_head, slen, 1, device='cuda'))
 
     q0 = q0 / q0.sum(dim=-1, keepdim=True)
     k0 = k0 / k0.sum(dim=-1, keepdim=True)
 
-    q1 = torch.zeros(3, 5, 7, 11, requires_grad=True).to(0)
-    k1 = torch.zeros(3, 5, 7, 11, requires_grad=True).to(0)
-    v1 = torch.zeros(3, 5, 7, v_dim, requires_grad=True).to(0)
-    beta1 = torch.zeros(3, 5, 7, 1, requires_grad=True).to(0)
+    q1 = torch.zeros(
+        bsz, n_head, slen, d_head, requires_grad=True, device='cuda')
+    k1 = torch.zeros(
+        bsz, n_head, slen, d_head, requires_grad=True, device='cuda')
+    v1 = torch.zeros(
+        bsz, n_head, slen, v_dim, requires_grad=True, device='cuda')
+    beta1 = torch.zeros(
+        bsz, n_head, slen, 1, requires_grad=True, device='cuda')
+
     q1.data = q0.data
     k1.data = k0.data
     v1.data = v0.data
     beta1.data = beta0.data
 
-    W1 = torch.zeros(3, 5, 11, v_dim).to(0)
+    W1 = torch.zeros(bsz, n_head, d_head, v_dim, device='cuda')
+    print("Forwarding custom kernel...")
     out1 = fast_weight_memory(q1, k1, v1, beta1, W1)
+    print("done.")
 
     # compute using torch
-    q2 = torch.zeros(3, 5, 7, 11, requires_grad=True).to(0)
-    k2 = torch.zeros(3, 5, 7, 11, requires_grad=True).to(0)
-    v2 = torch.zeros(3, 5, 7, v_dim, requires_grad=True).to(0)
-    beta2 = torch.zeros(3, 5, 7, 1, requires_grad=True).to(0)
+    q2 = torch.zeros(
+        bsz, n_head, slen, d_head, requires_grad=True, device='cuda')
+    k2 = torch.zeros(
+        bsz, n_head, slen, d_head, requires_grad=True, device='cuda')
+    v2 = torch.zeros(
+        bsz, n_head, slen, v_dim, requires_grad=True, device='cuda')
+    beta2 = torch.zeros(
+        bsz, n_head, slen, 1, requires_grad=True, device='cuda')
 
     q2.data = q0.data
     k2.data = k0.data
@@ -166,16 +175,17 @@ if __name__ == '__main__':
     beta_2 = beta2.permute(2, 0, 1, 3)
     beta_2 = beta_2.reshape(slen, bsz * n_head, 1)
 
-    W = torch.zeros(3 * 5, v_dim, 11).to(0)
+    W = torch.zeros(bsz * n_head, v_dim, d_head, device='cuda')
 
     out_list = []
-
+    print("Forwarding PyTorch code...")
     for pos in range(slen):
         v_old = torch.bmm(W, k_2[pos].unsqueeze(2)).squeeze()
         v_insert = beta_2[pos] * (v_2[pos] - v_old)
         W = W + torch.bmm(v_insert.unsqueeze(2), k_2[pos].unsqueeze(1))
         out_t = torch.bmm(W, q_2[pos].unsqueeze(2)).squeeze()
         out_list.append(out_t.clone())
+    print("done.")
 
     out2 = torch.stack(out_list)
     out2 = out2.view(slen, bsz, n_head, v_dim)
@@ -195,7 +205,7 @@ if __name__ == '__main__':
     print('# Test Backward pass')
     print('##########################')
 
-    # grad 
+    # grad
     loss1 = out1.sum()
     q1.retain_grad()
     k1.retain_grad()
@@ -213,7 +223,7 @@ if __name__ == '__main__':
     loss2.backward()
 
     for s in range(slen):
-        for b in range(bsz):
+        for b in reversed(range(bsz)):
             for h in range(n_head):
                 print(f"s={s}, b={b}, h={h}")
                 print(f"grad query1: {q1.grad[b][h][s]}")
@@ -241,4 +251,3 @@ if __name__ == '__main__':
                 print("pass!")
 
     print("All tests pass.")
-
