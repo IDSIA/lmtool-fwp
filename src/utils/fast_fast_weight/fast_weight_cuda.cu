@@ -40,7 +40,7 @@ __global__ void fast_weight_forward_kernel(
 
     // threadIdx.x = e_local*M + m
     // Local e coordinate within E_per_subblock sub-block.
-    int e_local = threadIdx.x / M;
+    int e_local = threadIdx.x / M;  // e index within the sub-block
     int m = threadIdx.x % M;
 
     const int E_block = subblocks_per_seq * E_per_subblock;
@@ -53,14 +53,14 @@ __global__ void fast_weight_forward_kernel(
     float* shared_values = shared_results + M;
     float* shared_keys = shared_values + M*T;
     float* shared_queries = shared_keys + E_block*T;
-    float* shared_values_old = shared_queries + E_block*T;
-    float* shared_values_insert = shared_values_old + M;
-    float* shared_betas = shared_values_insert + M;
+    float* shared_v_old = shared_queries + E_block*T;
+    float* shared_v_insert = shared_v_old + M;
+    float* shared_betas = shared_v_insert + M;
 
     if (threadIdx.x < M) {
         shared_results[threadIdx.x] = 0.0;
-        shared_values_old[threadIdx.x] = 0.0;
-        shared_values_insert[threadIdx.x] = 0.0;
+        shared_v_old[threadIdx.x] = 0.0;
+        shared_v_insert[threadIdx.x] = 0.0;
     }
     // the last segment is shorter.
     int t_end = (T + l_offset) <= L ? T : L - l_offset;
@@ -71,8 +71,7 @@ __global__ void fast_weight_forward_kernel(
         int d = i % M;
         shared_values[i] = values[n][h][t][d];
     }
-    for (int i = threadIdx.x; i < (t_end*E_block);
-         i += blockDim.x)
+    for (int i = threadIdx.x; i < (t_end*E_block); i += blockDim.x)
     {
         int t = int(i / E_block) + l_offset;
         int d = (i % E_block);
@@ -90,27 +89,33 @@ __global__ void fast_weight_forward_kernel(
     if (n >= N) {
         return;
     }
+
     int e;
+    int e_abs;  // absolute idx from t=0
+    int kv_idx;
+
     for (int sub=0; sub<subblocks_per_seq; sub++) {
         e = sub * E_per_subblock + e_local;
+        kv_idx = threadIdx.x + sub * blockDim.x;
         if (e < E) {
-            shared_kv[threadIdx.x + sub * blockDim.x] = kv[n][h][e][m];
+            shared_kv[kv_idx] = kv[n][h][e][m];
         }
     }
 
-    for (int t=0; t<t_end; t++) {  // loop over time in the segment
+    for (int t=0; t<t_end; t++) {  // main loop over time in the segment
         int l = t + l_offset;  // absolute position in time
         float v_old;
         for (int sub=0; sub<subblocks_per_seq; sub++) {
             e = sub * E_per_subblock + e_local;
+            e_abs = t*E_block + e;
+            kv_idx = threadIdx.x + sub * blockDim.x;
             if (e < E) {
                 // get old value
-                v_old = shared_kv[threadIdx.x + sub * blockDim.x] *
-                  shared_keys[t*E_block + e];
+                v_old = shared_kv[kv_idx] * shared_keys[e_abs];
                 __syncthreads();
 
                 atomicAdd(
-                    &shared_values_old[m],
+                    &shared_v_old[m],
                     v_old
                 );
                 __syncthreads();
@@ -119,9 +124,9 @@ __global__ void fast_weight_forward_kernel(
 
         // compute new value to be inserted
         if (threadIdx.x < M) {
-            shared_values_insert[threadIdx.x] =
-              shared_betas[t] * (shared_values[t*M + threadIdx.x]
-                                 - shared_values_old[threadIdx.x]);
+            // m = threadIdx.x if threadIdx.x < M
+            shared_v_insert[m] =
+              shared_betas[t] * (shared_values[t*M + m] - shared_v_old[m]);
         }
         __syncthreads();
 
@@ -129,14 +134,12 @@ __global__ void fast_weight_forward_kernel(
         for (int sub=0; sub<subblocks_per_seq; sub++) {
             // Update fast weights
             e = sub * E_per_subblock + e_local;
+            e_abs = t*E_block + e;
+            kv_idx = threadIdx.x + sub * blockDim.x;
             if (e < E) {
-                shared_kv[threadIdx.x + sub * blockDim.x] +=
-                  shared_keys[t*E_block + e] * shared_values_insert[m];
+                shared_kv[kv_idx] += shared_keys[e_abs] * shared_v_insert[m];
                 __syncthreads();
-
-                res = shared_queries[t*E_block + e]
-                  * shared_kv[threadIdx.x + sub * blockDim.x];
-
+                res = shared_queries[e_abs] * shared_kv[kv_idx];
                 atomicAdd(
                     &shared_results[m],
                     res
@@ -146,35 +149,37 @@ __global__ void fast_weight_forward_kernel(
         __syncthreads();
 
         if (threadIdx.x < M) {
-            float r1 = shared_results[threadIdx.x];
+            // m = threadIdx.x if threadIdx.x < M
+            float r1 = shared_results[m];
             atomicAdd(
                 &result[n][h][l][m],
                 r1
             );
-            shared_results[threadIdx.x] = 0.0;
+            shared_results[m] = 0.0;
 
             // same for v_old and v_insert
-            float r2 = shared_values_old[threadIdx.x];
+            float r2 = shared_v_old[m];
             atomicAdd(
                 &values_old[n][h][l][m],
                 r2
             );
-            shared_values_old[threadIdx.x] = 0.0;
+            shared_v_old[m] = 0.0;
 
-            float r3 = shared_values_insert[threadIdx.x];
+            float r3 = shared_v_insert[m];
             atomicAdd(
                 &values_insert[n][h][l][m],
                 r3
             );
-            shared_values_insert[threadIdx.x] = 0.0;
+            shared_v_insert[m] = 0.0;
         }
     }
     __syncthreads();
     // write back to kv to be carried over to the next segment.
     for (int sub=0; sub<subblocks_per_seq; sub++) {
         e = sub * E_per_subblock + e_local;
+        kv_idx = threadIdx.x + sub * blockDim.x;
         if (e < E) {
-            kv[n][h][e][m] = shared_kv[threadIdx.x + sub * blockDim.x];
+            kv[n][h][e][m] = shared_kv[kv_idx];
         }
     }
 }
@@ -189,7 +194,7 @@ void fast_weight_forward(
     torch::Tensor v_old,
     torch::Tensor v_insert,
     torch::Tensor kv,  // might be non zero if carried over from previous seg.
-    torch::Tensor product
+    torch::Tensor output
 ) {
 //    const at::cuda::OptionalCUDAGuard device_guard(device_of(queries));
     int N = queries.size(0);
@@ -235,7 +240,7 @@ void fast_weight_forward(
             v_old.packed_accessor32<float, 4, torch::RestrictPtrTraits>(),
             v_insert.packed_accessor32<float, 4, torch::RestrictPtrTraits>(),
             kv.packed_accessor32<float, 4, torch::RestrictPtrTraits>(),
-            product.packed_accessor32<float, 4, torch::RestrictPtrTraits>(),
+            output.packed_accessor32<float, 4, torch::RestrictPtrTraits>(),
             N, H, L, E, M, E_per_subblock, subblocks_per_seq, T, l_offset
         );
     }
@@ -287,9 +292,9 @@ __global__ void fast_weight_backward_query_key_kernel(
     float* shared_keys_bw = shared_results_bw + E; 
     float* shared_queries_bw = shared_keys_bw + E*T;
     float* shared_values_bw = shared_queries_bw + E*T;
-    float* shared_values_old_bw = shared_values_bw + M_block*T;
-    float* shared_values_insert_bw = shared_values_old_bw + M_block*T;
-    float* shared_betas_bw = shared_values_insert_bw + M_block*T;
+    float* shared_v_old_bw = shared_values_bw + M_block*T;
+    float* shared_v_insert_bw = shared_v_old_bw + M_block*T;
+    float* shared_betas_bw = shared_v_insert_bw + M_block*T;
     float* shared_tmp_grad_bw = shared_betas_bw + T;
     float* shared_gradout_bw = shared_tmp_grad_bw + M_block*T;
 
@@ -306,8 +311,8 @@ __global__ void fast_weight_backward_query_key_kernel(
         int d = (i % M_block) + m_start;
         if (d < M) {
             shared_values_bw[i] = values[n][h][t_bw][d];
-            shared_values_old_bw[i] = values_old[n][h][t_bw][d];
-            shared_values_insert_bw[i] = values_insert[n][h][t_bw][d];
+            shared_v_old_bw[i] = values_old[n][h][t_bw][d];
+            shared_v_insert_bw[i] = values_insert[n][h][t_bw][d];
             shared_tmp_grad_bw[i] = tmp_grad[n][h][t_bw][d];
             shared_gradout_bw[i] = grad_out[n][h][t_bw][d];
         }
@@ -335,21 +340,24 @@ __global__ void fast_weight_backward_query_key_kernel(
     shared_kv[threadIdx.x] = kv[n][h][e][m];
     shared_grad_kv[threadIdx.x] = grad_kv[n][h][e][m];
 
+    int kv_idx = m_local*E + e;
+    int e_abs;
+    int m_abs;
+
     for (int t=0; t<t_end; t++) {
         int l = t + l_offset;
         int l_b = L - l -1;
+        e_abs = t*E + e;  // e absolute idx from time 0
+        m_abs = t*M_block + m_local;  // same for m
 
-        shared_grad_kv[m_local*E + e] +=
-          shared_queries_bw[t*E + e] * shared_gradout_bw[t*M_block + m_local];
+        shared_grad_kv[kv_idx] +=
+          shared_queries_bw[e_abs] * shared_gradout_bw[m_abs];
         __syncthreads();
-        // grad_q
-        float res =
-          shared_gradout_bw[t*M_block + m_local] * shared_kv[m_local*E + e];
-        // partial key grad
-        float res_bw =
-          (shared_values_bw[t*M_block + m_local]
-           - shared_values_old_bw[t*M_block + m_local])
-           * shared_grad_kv[m_local*E + e] * shared_betas_bw[t];
+        float res = shared_gradout_bw[m_abs] * shared_kv[kv_idx];  // grad_q
+
+        float res_bw = (shared_values_bw[m_abs] - shared_v_old_bw[m_abs])
+          * shared_grad_kv[kv_idx] * shared_betas_bw[t];  // partial key grad
+
         atomicAdd(
             &shared_results[e],
             res
@@ -360,20 +368,19 @@ __global__ void fast_weight_backward_query_key_kernel(
         );  // key grad part 1 and 2 done out of 3.
 
         // Reverse update fast weight memory.
-        shared_kv[m_local*E + e] -= shared_keys_bw[t*E + e]
-          * shared_values_insert_bw[t*M_block + m_local];
+        shared_kv[kv_idx] -= shared_keys_bw[e_abs] * shared_v_insert_bw[m_abs];
         __syncthreads();
 
-        float res_k =
-          shared_kv[m_local*E + e] * shared_tmp_grad_bw[t*M_block + m_local];
+        float res_k = shared_kv[kv_idx] * shared_tmp_grad_bw[m_abs];
         atomicAdd(
             &shared_results_bw[e],
             res_k
         );  // grad key part 3 of 3
         __syncthreads();
         if (threadIdx.x < E) {
-            float rq = shared_results[threadIdx.x];
-            float rk = shared_results_bw[threadIdx.x];
+            // e = threadIdx.x if threadIdx.x < E
+            float rq = shared_results[e];
+            float rk = shared_results_bw[e];
             atomicAdd(
                 &grad_queries[n][h][l_b][e],
                 rq
@@ -382,16 +389,16 @@ __global__ void fast_weight_backward_query_key_kernel(
                 &grad_keys[n][h][l_b][e],
                 rk
             );
-            shared_results[threadIdx.x] = 0.0;
-            shared_results_bw[threadIdx.x] = 0.0;
+            shared_results[e] = 0.0;
+            shared_results_bw[e] = 0.0;
         }
         // remainder grad for fwm
-        shared_grad_kv[m_local*E + e] +=
-          shared_keys_bw[t*E + e] * shared_tmp_grad_bw[t*M_block + m_local];
+        shared_grad_kv[kv_idx] +=
+          shared_keys_bw[e_abs] * shared_tmp_grad_bw[m_abs];
     }
     __syncthreads();
-    kv[n][h][e][m] = shared_kv[m_local*E + e];
-    grad_kv[n][h][e][m] = shared_grad_kv[m_local*E + e];
+    kv[n][h][e][m] = shared_kv[kv_idx];
+    grad_kv[n][h][e][m] = shared_grad_kv[kv_idx];
 }
 
 
@@ -440,8 +447,8 @@ __global__ void fast_weight_backward_value_beta_kernel(
     float* shared_keys = shared_gradout + M*T;
     float* shared_queries = shared_keys + E_block*T;
     float* shared_betas = shared_queries + E_block*T;
-    float* shared_values_old = shared_betas + T;
-    float* shared_values = shared_values_old + M*T;
+    float* shared_v_old = shared_betas + T;
+    float* shared_values = shared_v_old + M*T;
 
     if (threadIdx.x < M) {
         shared_results[threadIdx.x] = 0.0;
@@ -458,7 +465,7 @@ __global__ void fast_weight_backward_value_beta_kernel(
         int d = i % M;
         shared_gradout[i] = grad_out[n][h][t_bw][d];
         shared_values[i] = values[n][h][t_bw][d];
-        shared_values_old[i] = values_old[n][h][t_bw][d];
+        shared_v_old[i] = values_old[n][h][t_bw][d];
     }
     for (int i = threadIdx.x; i < (t_end*E_block); i += blockDim.x)
     {
@@ -480,27 +487,34 @@ __global__ void fast_weight_backward_value_beta_kernel(
     if (n >= N) {
         return;
     }
+
     int e;
+    int e_abs;  // absolute idx from t=0
+    int kv_idx;
+
     for (int sub=0; sub<subblocks_per_seq; sub++) {
         e = sub * E_per_subblock + e_local;
+        kv_idx = threadIdx.x + sub * blockDim.x;
         if (e < E) {
-            shared_kv[threadIdx.x + sub * blockDim.x] = grad_kv[n][h][e][m];
+            shared_kv[kv_idx] = grad_kv[n][h][e][m];
         }
     }
 
     for (int t=0; t<t_end; t++) {
         int l = t + l_offset;
         int l_b = L - l -1;
+        int m_abs = t*M + m;
 
         for (int sub=0; sub<subblocks_per_seq; sub++) {
             e = sub * E_per_subblock + e_local;
+            e_abs = t*E_block + e;
+            kv_idx = threadIdx.x + sub * blockDim.x;
             if (e < E) {
-                shared_kv[threadIdx.x + sub * blockDim.x] +=
-                  shared_queries[t*E_block + e] * shared_gradout[t*M + m];
+                shared_kv[kv_idx] +=
+                  shared_queries[e_abs] * shared_gradout[m_abs];
                 __syncthreads();
 
-                float res = shared_keys[t*E_block + e]
-                            * shared_kv[threadIdx.x + sub * blockDim.x];
+                float res = shared_keys[e_abs] * shared_kv[kv_idx];
                 atomicAdd(
                     &shared_results[m],
                     res
@@ -512,36 +526,35 @@ __global__ void fast_weight_backward_value_beta_kernel(
 
         for (int sub=0; sub<subblocks_per_seq; sub++) {
             e = sub * E_per_subblock + e_local;
+            e_abs = t*E_block + e;
+            kv_idx = threadIdx.x + sub * blockDim.x;
             if (e < E) {
-                shared_kv[threadIdx.x + sub * blockDim.x] -=
-                  shared_betas[t] * shared_results[m]
-                  * shared_keys[t*E_block + e];
+                shared_kv[kv_idx] -=
+                  shared_betas[t] * shared_results[m] * shared_keys[e_abs];
             }
         }
         __syncthreads();
 
         if (threadIdx.x < M) {
-            float r1 = shared_results[threadIdx.x] * shared_betas[t];
+            // m = threadIdx.x if threadIdx.x < M
+            float r1 = shared_results[m] * shared_betas[t];
             atomicAdd(
-                &grad_values[n][h][l_b][threadIdx.x],
+                &grad_values[n][h][l_b][m],
                 r1
             );
 
             float r2 = -r1;
             atomicAdd(
-                &tmp_grad[n][h][l_b][threadIdx.x],
+                &tmp_grad[n][h][l_b][m],
                 r2
             );
-
-            float res_beta = shared_results[threadIdx.x] * (
-                shared_values[t*M + threadIdx.x]
-                - shared_values_old[t*M + threadIdx.x]);
+            float res_beta = (shared_values[m_abs] - shared_v_old[m_abs])
+              * shared_results[m];
             atomicAdd(
                 &shared_results_beta[0],
                 res_beta
             );
-
-            shared_results[threadIdx.x] = 0.0;
+            shared_results[m] = 0.0;
         }
         __syncthreads();
 
@@ -557,8 +570,9 @@ __global__ void fast_weight_backward_value_beta_kernel(
     __syncthreads();
     for (int sub=0; sub<subblocks_per_seq; sub++) {
         e = sub * E_per_subblock + e_local;
+        kv_idx = threadIdx.x + sub * blockDim.x;
         if (e < E) {
-            grad_kv[n][h][e][m] = shared_kv[threadIdx.x + sub * blockDim.x];
+            grad_kv[n][h][e][m] = shared_kv[kv_idx];
         }
     }
 }
