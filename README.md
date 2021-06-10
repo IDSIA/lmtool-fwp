@@ -1,4 +1,4 @@
-## PyTorch Language Modeling Toolkit (for Fast Weight Memory Systems)
+## PyTorch Language Modeling Toolkit (for Fast Weight Programmers)
 
 This repository contains the official code used for language modeling experiments in the paper(s):
 * [Linear Transformers are Secretly Fast Weight Programmers](https://arxiv.org/abs/2102.11174)
