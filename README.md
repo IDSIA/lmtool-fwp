@@ -54,7 +54,7 @@ Please check files under `example_scripts` for general instructions and examples
 If you make use of this toolkit for your experiments, please cite:
 ```
 @article{schlag2021linear,
-      title={Linear Transformers Are Secretly Fast Weight Memory Systems}, 
+      title={Linear Transformers Are Secretly Fast Weight Programmers}, 
       author={Imanol Schlag and Kazuki Irie and J\"urgen Schmidhuber},  
       journal={Preprint arXiv:2102.11174},
       year={2021}
