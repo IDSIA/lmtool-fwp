@@ -1,7 +1,7 @@
 ## PyTorch Language Modeling Toolkit (for Fast Weight Programmers)
 
 This repository contains the official code used for language modeling experiments in the paper(s):
-* [Linear Transformers are Secretly Fast Weight Programmers](https://arxiv.org/abs/2102.11174)
+* [Linear Transformers are Secretly Fast Weight Programmers (ICML 2021)](https://arxiv.org/abs/2102.11174)
 * ...
 
 More generally, this can be used as a language modeling toolkit in PyTorch to experiment with:
