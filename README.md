@@ -1,14 +1,14 @@
 ## PyTorch Language Modeling Toolkit (for Fast Weight Memory Systems)
 
 This repository contains the official code used for language modeling experiments in the paper(s):
-* [Linear Transformers are Secretly Fast Weight Memory Systems](https://arxiv.org/abs/2102.11174)
+* [Linear Transformers are Secretly Fast Weight Programmers](https://arxiv.org/abs/2102.11174)
 * ...
 
 More generally, this can be used as a language modeling toolkit in PyTorch to experiment with:
 * [Standard Transformers](https://arxiv.org/abs/1808.04444)
 * [Transformer-XL](https://arxiv.org/abs/1901.02860)
-* **Fast Weight Memory Systems** with different **update rules** and **linear attention functions**:
-    * Update rules: "sum" and "ours" with removal (as proposed in our paper; Sec 4.2)
+* **Fast Weight Programmers** with different **update rules** and **linear attention functions**:
+    * Update rules: "sum" and our "delta" rule (as proposed in our paper; Sec 4.2)
     * Linear attention functions: "ELU-based" linear attention, "FAVOR+", "deterministic parameter-free projection (DPFP)"
     
     e.g. some combinations result in well known models:
@@ -40,7 +40,7 @@ This reposity contains many lines of code taken and adapted from the following s
 The code for Transformer-XL and standard Transformer models, as well as basic functionality needed for language modeling
 (including adaptive input and output embeddings) and data preparation (WikiText-103, enwik8, ...) is from the corresponding repository.
 * For Performers, helper functions from [lucidrains/performer-pytorch](https://github.com/lucidrains/performer-pytorch) are used.
-* For cuda implementations of fast weight memory systems:
+* For cuda implementations of our fast weight programmers with the delta rule:
     * Code from [idiap/fast-transformers](https://github.com/idiap/fast-transformers/tree/master/fast_transformers/causal_product) is used with minor changes for the sum update rule.
     * We modified it to implement our update rule.
 See comments in code for exact locations and modifications.
