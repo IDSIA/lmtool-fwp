@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils.fast_fast_weight import fast_weight_memory
+from utils.fast_fast_weight import fast_weight_delta
 from utils.fast_transformers import fast_weight_sum
 
 # Delta RNN variants
@@ -146,7 +146,7 @@ class CudaFastWeightLinearTransformerLayer(nn.Module):
             denominator = torch.einsum(
                 'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
-        layer_out = fast_weight_memory(
+        layer_out = fast_weight_delta(
             head_q, head_k, head_v, head_beta, mem_fast_weights)
 
         # shape (B, n_head, len, d_head)
@@ -301,7 +301,7 @@ class CudaNormFastWeightLinearTransformerLayer(nn.Module):
             denominator = torch.einsum(
                 'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
-        layer_out = fast_weight_memory(
+        layer_out = fast_weight_delta(
             head_q, head_k, head_v, head_beta, mem_fast_weights)
 
         # shape (B, n_head, len, d_head)
@@ -433,7 +433,7 @@ class CudaFastWeightPerformerLayer(nn.Module):
             denominator = torch.einsum(
                 'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
-        layer_out = fast_weight_memory(
+        layer_out = fast_weight_delta(
             head_q, head_k, head_v, head_beta, mem_fast_weights)
 
         # shape (B, n_head, len, d_head)
@@ -590,7 +590,7 @@ class CudaNormFastWeightPerformerLayer(nn.Module):
             denominator = torch.einsum(
                 'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
-        layer_out = fast_weight_memory(
+        layer_out = fast_weight_delta(
             head_q, head_k, head_v, head_beta, mem_fast_weights)
 
         # shape (B, n_head, len, d_head)
@@ -985,7 +985,7 @@ class CudaFastWeightDPFPTransformerLayer(nn.Module):
             denominator = torch.einsum(
                 'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
-        layer_out = fast_weight_memory(
+        layer_out = fast_weight_delta(
             head_q, head_k, head_v, head_beta, mem_fast_weights)
 
         # shape (B, n_head, len, d_head)
@@ -1150,7 +1150,7 @@ class CudaNormFastWeightDPFPTransformerLayer(nn.Module):
             denominator = torch.einsum(
                 'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
-        layer_out = fast_weight_memory(
+        layer_out = fast_weight_delta(
             head_q, head_k, head_v, head_beta, mem_fast_weights)
 
         # print(mem_fast_weights.norm())
@@ -1474,7 +1474,7 @@ class CudaDeepFastNetLayer(nn.Module):
             mem_fast_weights = torch.zeros(
                 bsz, self.n_head, self.d_head, self.fast_ff_d_head,
                 device=head_q.device)
-            layer_out = fast_weight_memory(
+            layer_out = fast_weight_delta(
                 layer_out, cur_key, head_v[2 * layer_id], cur_beta,
                 mem_fast_weights)
             layer_out = elu_p1(layer_out)
@@ -1487,7 +1487,7 @@ class CudaDeepFastNetLayer(nn.Module):
             mem_fast_weights = torch.zeros(
                 bsz, self.n_head, self.fast_ff_d_head, self.d_head,
                 device=head_q.device)
-            layer_out = fast_weight_memory(
+            layer_out = fast_weight_delta(
                 layer_out, cur_key, head_v[2 * layer_id + 1], cur_beta,
                 mem_fast_weights)
             head_q = layer_out + head_q  # self.scale * head_q  # or not?
@@ -1606,7 +1606,7 @@ class CudaDeltaDeltaLayer(nn.Module):
                 bsz, self.n_head, self.d_head, 3 * self.d_head + 1,
                 device=head_q.device)
 
-        fast_qkvb = fast_weight_memory(
+        fast_qkvb = fast_weight_delta(
             head_q, head_k, head_v, head_beta, mem_fast_weights)
 
         fast_head_q, fast_head_k, fast_head_v, fast_beta = torch.split(
@@ -1619,7 +1619,7 @@ class CudaDeltaDeltaLayer(nn.Module):
         mem_fast_weights = torch.zeros(
             bsz, self.n_head, self.d_head, self.d_head, device=head_q.device)
 
-        layer_out = fast_weight_memory(
+        layer_out = fast_weight_delta(
             fast_head_q, fast_head_k, fast_head_v, fast_beta, mem_fast_weights)
 
         layer_out = layer_out.transpose(1, 2)
@@ -1758,7 +1758,7 @@ class CudaFastRNNLayer(nn.Module):
                 'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
         # feed-forward part
-        z_out = fast_weight_memory(
+        z_out = fast_weight_delta(
             head_q, head_k, head_v, head_beta, mem_fast_weights)
 
         # recurrent part
@@ -1933,7 +1933,7 @@ class CudaFastRNNv2Layer(nn.Module):
                 'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
         # feed-forward part
-        z_out = fast_weight_memory(
+        z_out = fast_weight_delta(
             head_q, head_k, head_v, head_beta, mem_fast_weights)
 
         # recurrent part
@@ -2175,11 +2175,11 @@ class CudaFastLSTMLayer(nn.Module):
             #     'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
         # feed-forward part
-        zi = fast_weight_memory(
+        zi = fast_weight_delta(
             head_qi, head_ki, head_vi, head_beta_i, mem_fast_weights_i)
-        zu = fast_weight_memory(
+        zu = fast_weight_delta(
             head_qu, head_ku, head_vu, head_beta_u, mem_fast_weights_u)
-        zo = fast_weight_memory(
+        zo = fast_weight_delta(
             head_qo, head_ko, head_vo, head_beta_o, mem_fast_weights_o)
 
         # recurrent part
@@ -2438,11 +2438,11 @@ class CudaFastLSTMv2Layer(nn.Module):
             #     'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
         # feed-forward part
-        zi = fast_weight_memory(
+        zi = fast_weight_delta(
             head_qi, head_ki, head_vi, head_beta_i, mem_fast_weights_i)
-        zu = fast_weight_memory(
+        zu = fast_weight_delta(
             head_qu, head_ku, head_vu, head_beta_u, mem_fast_weights_u)
-        zo = fast_weight_memory(
+        zo = fast_weight_delta(
             head_qo, head_ko, head_vo, head_beta_o, mem_fast_weights_o)
 
         # recurrent part
@@ -2688,11 +2688,11 @@ class CudaFastLSTMv3Layer(nn.Module):
             #     'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
         # feed-forward part
-        zi = fast_weight_memory(
+        zi = fast_weight_delta(
             head_qi, head_ki, head_vi, head_beta_i, mem_fast_weights_i)
-        zu = fast_weight_memory(
+        zu = fast_weight_delta(
             head_qu, head_ku, head_vu, head_beta_u, mem_fast_weights_u)
-        zo = fast_weight_memory(
+        zo = fast_weight_delta(
             head_qo, head_ko, head_vo, head_beta_o, mem_fast_weights_o)
 
         # recurrent part
@@ -2938,11 +2938,11 @@ class CudaFastLSTMv4Layer(nn.Module):
             #     'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
         # feed-forward part
-        zi = fast_weight_memory(
+        zi = fast_weight_delta(
             head_qi, head_ki, head_vi, head_beta_i, mem_fast_weights_i)
-        zu = fast_weight_memory(
+        zu = fast_weight_delta(
             head_qu, head_ku, head_vu, head_beta_u, mem_fast_weights_u)
-        zo = fast_weight_memory(
+        zo = fast_weight_delta(
             head_qo, head_ko, head_vo, head_beta_o, mem_fast_weights_o)
 
         # recurrent part
@@ -3110,7 +3110,7 @@ class CudaFastWeightSlowRNNLayer(nn.Module):
             denominator = torch.einsum(
                 'lbij,lbij->lbi', denominator_acc, head_q).unsqueeze(-1)
 
-        layer_out = fast_weight_memory(
+        layer_out = fast_weight_delta(
             head_q, head_k, head_v, head_beta, mem_fast_weights)
 
         # shape (B, n_head, len, d_head)
