@@ -2,6 +2,7 @@
 
 This repository contains the official code used for language modeling experiments in the paper(s):
 * [Linear Transformers are Secretly Fast Weight Programmers (ICML 2021)](https://arxiv.org/abs/2102.11174)
+* [Going Beyond Linear Transformers with Recurrent Fast Weight Programmers](https://arxiv.org) (link coming soon)
 * ...
 
 More generally, this can be used as a language modeling toolkit in PyTorch to experiment with:
@@ -63,4 +64,6 @@ If you make use of this toolkit for your experiments, please cite:
 }
 ```
 
-The code for synthetic retrieval experiments can be found at [ischlag/fast-weight-transformers](https://github.com/ischlag/fast-weight-transformers).
+## Links
+* The code for synthetic retrieval experiments can be found at [ischlag/fast-weight-transformers](https://github.com/ischlag/fast-weight-transformers).
+* [Jürgen Schmidhuber's AI blog post on Fast Weight Programmers (March 26, 2021)](https://people.idsia.ch/~juergen/fast-weight-programmer-1991-transformer.html).
