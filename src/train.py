@@ -40,6 +40,16 @@ parser.add_argument('--d_model', type=int, default=500,
                     help='model dimension')
 parser.add_argument('--d_inner', type=int, default=1000,
                     help='inner dimension in FF')
+parser.add_argument('--d_res', type=int, default=None,
+                    help='res connection size')
+parser.add_argument('--remove_ff', action='store_true',
+                    help='do not use feed-forward layers')
+parser.add_argument('--remove_lnorm', action='store_true',
+                    help='do not use lnorm (only for RNNs for now)')
+parser.add_argument('--remove_res', action='store_true',
+                    help='do not use res connection (only for RNNs for now)')
+parser.add_argument('--remove_out_proj', action='store_true',
+                    help='remove proj after RNN layer (only for RNNs)')
 parser.add_argument('--dropout', type=float, default=0.0,
                     help='global dropout rate')
 parser.add_argument('--dropatt', type=float, default=0.0,
@@ -149,6 +159,10 @@ parser.add_argument('--performer_proj_dim', type=int, default=16,
                     help='projection dimension for performer layers.')
 parser.add_argument('--dpfp_n_roll', type=int, default=2,
                     help='number of rolls for dpfp attention layers.')
+parser.add_argument('--fast_net_depth', type=int, default=1,
+                    help='number of layers in the fast nets.')
+parser.add_argument('--use_slow_base_weights', action='store_true',
+                    help='use base slow weights in fast net.')                  
 parser.add_argument('--carry_over_fast_weight', action='store_true',
                     help='carry over fast weights.')
 parser.add_argument('--skip_attn_normalization', action='store_true',
@@ -193,83 +207,91 @@ if args.use_wandb:  # configure wandb.
                          f"{args.performer_proj_dim}//" \
                          f"{args.tgt_len}-{args.eval_tgt_len}" \
                          f"-{args.mem_len}//" \
-                         f"{args.n_layer}-{args.n_head}-" \
+                         f"{args.n_layer}-{args.n_head}-{args.d_res}" \
                          f"{args.d_head}-{args.d_embed}-{args.d_model}-" \
                          f"{args.d_inner}-{args.dropout}-{args.dropatt}-//" \
                          f"{args.lr}-{args.warmup_step}" \
                          f"{args.batch_size}-{args.eval_batch_size}//" \
                          f"{args.seed}-{args.work_dir}-{args.dpfp_n_roll}" \
-                         f"-{args.carry_over_fast_weight}-{args.no_pos}"
+                         f"-{args.carry_over_fast_weight}-{args.no_pos}" \
+                         f"-{args.fast_net_depth}-{args.use_slow_base_weights}"
     else:
         wandb.run.name = f"{os.uname()[1]}//{args.job_name}"
 
     config = wandb.config
     config.host = os.uname()[1]  # host node name
-    config.data = args.data
-    config.dataset = args.dataset
-    config.n_layer = args.n_layer
-    config.n_head = args.n_head
-    config.d_head = args.d_head
-    config.d_embed = args.d_embed
-    config.d_model = args.d_model
-    config.d_inner = args.d_inner
-    config.dropout = args.dropout
-    config.dropatt = args.dropatt
-    config.init = args.init
-    config.emb_init = args.emb_init
-    config.init_range = args.init_range
-    config.emb_init_range = args.emb_init_range
-    config.init_std = args.init_std
-    config.proj_init_std = args.proj_init_std
-    config.optim = args.optim
-    config.lr = args.lr
-    config.mom = args.mom
-    config.scheduler = args.scheduler
-    config.warmup_step = args.warmup_step
-    config.decay_rate = args.decay_rate
-    config.lr_min = args.lr_min
-    config.clip = args.clip
-    config.clip_nonemb = args.clip_nonemb
-    config.max_step = args.max_step
-    config.batch_size = args.batch_size
-    config.eval_batch_size = args.eval_batch_size
-    config.batch_chunk = args.batch_chunk
-    config.tgt_len = args.tgt_len
-    config.eval_tgt_len = args.eval_tgt_len
-    config.ext_len = args.ext_len
-    config.mem_len = args.mem_len
-    config.not_tied = args.not_tied
-    config.seed = args.seed
-    config.cuda = args.cuda
-    config.adaptive = args.adaptive
-    config.div_val = args.div_val
-    config.pre_lnorm = args.pre_lnorm
-    config.varlen = args.varlen
-    config.multi_gpu = args.multi_gpu
-    config.log_interval = args.log_interval
-    config.eval_interval = args.eval_interval
-    config.work_dir = args.work_dir
-    config.restart = args.restart
+    config.data=args.data
+    config.dataset=args.dataset
+    config.n_layer=args.n_layer
+    config.n_head=args.n_head
+    config.d_head=args.d_head
+    config.d_embed=args.d_embed
+    config.d_model=args.d_model
+    config.d_inner=args.d_inner
+    config.d_res = args.d_res
+    config.dropout=args.dropout
+    config.dropatt=args.dropatt
+    config.init=args.init
+    config.emb_init=args.emb_init
+    config.init_range=args.init_range
+    config.emb_init_range=args.emb_init_range
+    config.init_std=args.init_std
+    config.proj_init_std=args.proj_init_std
+    config.optim=args.optim
+    config.lr=args.lr
+    config.mom=args.mom
+    config.scheduler=args.scheduler
+    config.warmup_step=args.warmup_step
+    config.decay_rate=args.decay_rate
+    config.lr_min=args.lr_min
+    config.clip=args.clip
+    config.clip_nonemb=args.clip_nonemb
+    config.max_step=args.max_step
+    config.batch_size=args.batch_size
+    config.eval_batch_size=args.eval_batch_size
+    config.batch_chunk=args.batch_chunk
+    config.tgt_len=args.tgt_len
+    config.eval_tgt_len=args.eval_tgt_len
+    config.ext_len=args.ext_len
+    config.mem_len=args.mem_len
+    config.not_tied=args.not_tied
+    config.seed=args.seed
+    config.cuda=args.cuda
+    config.adaptive=args.adaptive
+    config.div_val=args.div_val
+    config.pre_lnorm=args.pre_lnorm
+    config.varlen=args.varlen
+    config.multi_gpu=args.multi_gpu
+    config.log_interval=args.log_interval
+    config.eval_interval=args.eval_interval
+    config.work_dir=args.work_dir
+    config.restart=args.restart
     config.restart_model = args.restart_model
     config.restart_opt = args.restart_opt
-    config.debug = args.debug
-    config.same_length = args.same_length
-    config.attn_type = args.attn_type
-    config.clamp_len = args.clamp_len
-    config.eta_min = args.eta_min
-    config.gpu0_bsz = args.gpu0_bsz
-    config.max_eval_steps = args.max_eval_steps
-    config.sample_softmax = args.sample_softmax
-    config.patience = args.patience
-    config.finetune_v2 = args.finetune_v2
-    config.finetune_v3 = args.finetune_v3
-    config.performer_proj_dim = args.performer_proj_dim
-    config.dpfp_n_roll = args.dpfp_n_roll
-    config.carry_over_fast_weight = args.carry_over_fast_weight
-    config.skip_attn_normalization = args.skip_attn_normalization
-    config.no_pos = args.no_pos
-    config.fp16 = args.fp16
-    config.static_loss_scale = args.static_loss_scale
+    config.debug=args.debug
+    config.same_length=args.same_length
+    config.attn_type=args.attn_type
+    config.clamp_len=args.clamp_len
+    config.eta_min=args.eta_min
+    config.gpu0_bsz=args.gpu0_bsz
+    config.max_eval_steps=args.max_eval_steps
+    config.sample_softmax=args.sample_softmax
+    config.patience=args.patience
+    config.finetune_v2=args.finetune_v2
+    config.finetune_v3=args.finetune_v3
+    config.performer_proj_dim=args.performer_proj_dim
+    config.dpfp_n_roll=args.dpfp_n_roll
+    config.use_slow_base_weights=args.use_slow_base_weights
+    config.carry_over_fast_weight=args.carry_over_fast_weight
+    config.skip_attn_normalization=args.skip_attn_normalization
+    config.remove_ff = args.remove_ff
+    config.remove_res = args.remove_res
+    config.remove_lnorm = args.remove_lnorm
+    config.remove_out_proj = args.remove_out_proj
+    config.no_pos=args.no_pos
+    config.fast_net_depth=args.fast_net_depth
+    config.fp16=args.fp16
+    config.static_loss_scale=args.static_loss_scale
 else:
     use_wandb = False
 
@@ -277,6 +299,9 @@ args.tied = not args.not_tied
 
 if args.d_embed < 0:
     args.d_embed = args.d_model
+
+if args.d_res is not None and args.attn_type in [81, 91]:
+    assert args.d_res == args.d_model, "`d_res = d_model` required for 81 & 91"
 
 assert args.ext_len >= 0, 'extended context length must be non-negative'
 assert args.batch_size % args.batch_chunk == 0
@@ -433,6 +458,11 @@ model = MemTransformerLM(
     div_val=args.div_val,
     tie_projs=tie_projs,
     pre_lnorm=args.pre_lnorm,
+    remove_ff=args.remove_ff,
+    remove_res=args.remove_res,
+    remove_lnorm=args.remove_lnorm,
+    remove_out_proj=args.remove_out_proj,
+    d_res=args.d_res,
     tgt_len=args.tgt_len,
     ext_len=args.ext_len,
     mem_len=args.mem_len,
@@ -445,6 +475,8 @@ model = MemTransformerLM(
     n_roll=args.dpfp_n_roll,
     skip_attn_normalization=args.skip_attn_normalization,
     no_pos=args.no_pos,
+    fast_net_depth=args.fast_net_depth,
+    use_slow_base_weights=args.use_slow_base_weights,
     device=device,
 )
 logging('=' * 100)
@@ -470,6 +502,7 @@ if args.restart:
             f"best val ppl so far: {b_val_ppl:.2f} at epoch {b_ep}")
     with open(ckpt_path, 'rb') as f:
         model = torch.load(f)
+    # model.load_state_dict(checkpoint['model_state_dict'])
 
     if not args.fp16:
         model = model.float()

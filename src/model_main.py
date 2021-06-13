@@ -25,6 +25,27 @@ from utils.cuda_fast_weight_layer import CudaNormFastWeightPerformerLayer
 from utils.cuda_fast_weight_layer import CudaFastWeightDPFPTransformerLayer
 from utils.cuda_fast_weight_layer import CudaNormFastWeightDPFPTransformerLayer
 
+# Delta MLP
+from utils.cuda_fast_weight_layer import CudaDeepFastNetLayer
+# Delta Delta Net
+from utils.cuda_fast_weight_layer import CudaDeltaDeltaLayer
+
+# Delta RNNs
+from utils.cuda_fast_weight_layer import CudaFastRNNLayer
+from utils.cuda_fast_weight_layer import CudaFastRNNv2Layer
+
+# Delta LSTMs
+from utils.cuda_fast_weight_layer import CudaFastLSTMLayer
+from utils.cuda_fast_weight_layer import CudaFastLSTMv2Layer
+from utils.cuda_fast_weight_layer import CudaFastLSTMv3Layer
+from utils.cuda_fast_weight_layer import CudaFastLSTMv4Layer
+
+from utils.cuda_fast_weight_layer import CudaFastWeightSlowRNNLayer
+# Recurrent Delta Net
+from utils.cuda_fast_weight_layer import CudaFastWeightRecUpdateTanhLayer
+
+from utils.model_utils import LSTMLayer, RNNLayer
+
 
 # Standard multihead attention.
 class MultiHeadAttn(nn.Module):
@@ -683,6 +704,8 @@ class PerformerDecoderLayer(nn.Module):
 
 class DecoderLayer(nn.Module):
     def __init__(self, n_head, d_model, d_head, d_inner, dropout, attn_type,
+                 use_ff=True, d_res=None, use_lnorm=True, use_res=True,
+                 use_out_proj=True,
                  **kwargs):
         super(DecoderLayer, self).__init__()
 
@@ -708,12 +731,48 @@ class DecoderLayer(nn.Module):
             attn_func = CudaNormFastWeightDPFPTransformerLayer
         elif attn_type == 34:
             attn_func = CudaFastWeightSumLinearTransformerLayer
+        elif attn_type == 54:
+            attn_func = CudaDeepFastNetLayer
+        elif attn_type == 64:
+            attn_func = CudaDeltaDeltaLayer
+        elif attn_type == 80:
+            attn_func = RNNLayer
+        elif attn_type == 90:
+            attn_func = LSTMLayer
+        elif attn_type == 124:
+            attn_func = CudaFastRNNLayer
+        elif attn_type == 134:
+            attn_func = CudaFastRNNv2Layer
+        elif attn_type == 224:
+            attn_func = CudaFastLSTMLayer
+        elif attn_type == 234:
+            attn_func = CudaFastLSTMv2Layer
+        elif attn_type == 244:
+            attn_func = CudaFastLSTMv3Layer  # with residual connection
+        elif attn_type == 254:
+            attn_func = CudaFastLSTMv4Layer  # no sigm on update
+        elif attn_type == 324:
+            attn_func = CudaFastWeightSlowRNNLayer  # no sigm on update
+        elif attn_type == 924:
+            assert False, "Removed"  # same as below without tanh
+        elif attn_type == 934:
+            attn_func = CudaFastWeightRecUpdateTanhLayer
         else:
             raise Exception(f"attn_type {attn_type} not allowed here.")
 
-        self.dec_attn = attn_func(n_head, d_model, d_head, dropout, **kwargs)
-        self.pos_ff = PositionwiseFF(
-            d_model, d_inner, dropout, pre_lnorm=kwargs.get('pre_lnorm'))
+        if attn_type in [80, 90, 124, 224]:
+            self.dec_attn = attn_func(
+                n_head, d_model, d_head, dropout, d_res=d_res,
+                use_out_proj=use_out_proj, use_lnorm=use_lnorm,
+                use_res=use_res, **kwargs)
+        else:
+            self.dec_attn = attn_func(
+                n_head, d_model, d_head, dropout, **kwargs)
+
+        self.use_ff = use_ff
+        if use_ff:
+            self.pos_ff = PositionwiseFF(
+                d_model, d_inner, dropout, pre_lnorm=kwargs.get('pre_lnorm'))
 
     def forward(self, dec_inp, dec_attn_mask=None, mems=None,
                 carry_over_fast_weight=False):
@@ -722,8 +781,8 @@ class DecoderLayer(nn.Module):
 
         if carry_over_fast_weight:
             output, new_mem = output
-
-        output = self.pos_ff(output)
+        if self.use_ff:
+            output = self.pos_ff(output)
 
         if carry_over_fast_weight:
             return output, new_mem
@@ -844,13 +903,18 @@ class MemTransformerLM(nn.Module):
                  d_model,
                  d_head,
                  d_inner,
-                 dropout,
-                 dropatt,
+                 dropout=0.0,
+                 dropatt=0.0,
                  tie_weight=True,
                  d_embed=None,
                  div_val=1,
                  tie_projs=[False],
                  pre_lnorm=False,
+                 remove_ff=False,  # remove ff block
+                 remove_lnorm=False,  # for RNN and LSTM 80/90/124/224
+                 remove_res=False,  # idem
+                 remove_out_proj=False,  # idem
+                 d_res=None,
                  tgt_len=None,
                  ext_len=None,
                  mem_len=None,
@@ -864,6 +928,8 @@ class MemTransformerLM(nn.Module):
                  n_roll=3,  # mirrored attention
                  skip_attn_normalization=False,
                  no_pos=False,  # no positional encoding
+                 fast_net_depth=1,
+                 use_slow_base_weights=False,
                  device='cuda'):
         super(MemTransformerLM, self).__init__()
         self.n_token = n_token
@@ -875,8 +941,16 @@ class MemTransformerLM(nn.Module):
         self.n_head = n_head
         self.d_head = d_head
 
+        # set residual connection dim
+        if d_res is not None:
+            self.d_res = d_res
+        else:
+            self.d_res = d_model
+
+        # emb_out_dim = d_embed if remove_res else self.d_res
+        # if there is no proj, there is no need for projection
         self.word_emb = AdaptiveEmbedding(
-            n_token, d_embed, d_model, cutoffs, div_val=div_val)
+            n_token, d_embed, self.d_res, cutoffs, div_val=div_val)
 
         self.drop = nn.Dropout(dropout)
 
@@ -927,7 +1001,11 @@ class MemTransformerLM(nn.Module):
                         dropatt=dropatt, pre_lnorm=pre_lnorm,
                         attn_type=attn_type, n_roll=n_roll)
                 )
-        elif attn_type in [10, 14, 24, 34, 44]:  # fast weights
+        elif attn_type in [10, 14, 24, 34, 44, 74, 80, 90,
+                           104, 114, 124, 134, 144,
+                           204, 224, 234, 244, 254,
+                           324, 924, 934]:
+            # fast weights
             # 10: debugging, same as linear trafo but step by step
             # 14: linear fast weight
             for i in range(n_layer):
@@ -935,8 +1013,33 @@ class MemTransformerLM(nn.Module):
                     DecoderLayer(
                         n_head, d_model, d_head, d_inner, dropout,
                         dropatt=dropatt, pre_lnorm=pre_lnorm,
+                        use_ff=(not remove_ff),
+                        use_res=(not remove_res),
+                        use_lnorm=(not remove_lnorm),
+                        use_out_proj=(not remove_out_proj),
+                        d_res=self.d_res,
                         attn_type=attn_type, layer_id=i, num_layer=n_layer,
                         skip_attn_normalization=skip_attn_normalization)
+                )
+        elif attn_type in [64]:  # transformer programmer
+            for i in range(n_layer):
+                self.layers.append(
+                    DecoderLayer(
+                        n_head, d_model, d_head, d_inner, dropout,
+                        dropatt=dropatt, pre_lnorm=pre_lnorm,
+                        attn_type=attn_type, layer_id=i, num_layer=n_layer,
+                        skip_attn_normalization=skip_attn_normalization,
+                        use_slow_base_weights=use_slow_base_weights)
+                )
+        elif attn_type in [54]:  # deep fast nets
+            for i in range(n_layer):
+                self.layers.append(
+                    DecoderLayer(
+                        n_head, d_model, d_head, d_inner, dropout,
+                        dropatt=dropatt, pre_lnorm=pre_lnorm,
+                        attn_type=attn_type, layer_id=i, num_layer=n_layer,
+                        skip_attn_normalization=skip_attn_normalization,
+                        fast_net_depth=fast_net_depth)
                 )
         elif attn_type in [16, 26, 46]:  # fast weights w/ absolute embeddings
             # 10: debugging, same as linear trafo but step by step
@@ -965,15 +1068,16 @@ class MemTransformerLM(nn.Module):
         self.sample_softmax = sample_softmax
         # use sampled softmax
         if sample_softmax > 0:
-            self.out_layer = nn.Linear(d_model, n_token)
+            self.out_layer = nn.Linear(self.d_res, n_token)
             if tie_weight:
                 self.out_layer.weight = self.word_emb.weight
             self.tie_weight = tie_weight
             self.sampler = LogUniformSampler(n_token, sample_softmax)
+            self.crit = None
 
         # use adaptive softmax (including standard softmax)
         else:
-            self.crit = ProjectedAdaptiveLogSoftmax(n_token, d_embed, d_model, 
+            self.crit = ProjectedAdaptiveLogSoftmax(n_token, d_embed, self.d_res,
                                                     cutoffs, div_val=div_val)
 
             if tie_weight:
@@ -982,7 +1086,7 @@ class MemTransformerLM(nn.Module):
 
             if tie_projs:
                 for i, tie_proj in enumerate(tie_projs):
-                    if tie_proj and div_val == 1 and d_model != d_embed:
+                    if tie_proj and div_val == 1 and self.d_res != d_embed:
                         self.crit.out_projs[i] = self.word_emb.emb_projs[0]
                     elif tie_proj and div_val != 1:
                         self.crit.out_projs[i] = self.word_emb.emb_projs[i]
@@ -1015,9 +1119,16 @@ class MemTransformerLM(nn.Module):
                                 10, 14, 16,
                                 24, 25, 26,
                                 34, 35,
-                                44, 45, 46]:
+                                44, 45, 46,
+                                54,
+                                64,
+                                74,
+                                80, 90,
+                                104, 114, 124, 134, 144,
+                                204, 224, 234, 244, 254,
+                                324, 924, 934]:
             # standard absolute pos
-            self.pos_emb = PositionalEmbedding(self.d_model)
+            self.pos_emb = PositionalEmbedding(self.d_res)
 
         elif self.attn_type == 3:  # absolute deeper SA
             self.r_emb = nn.Parameter(torch.Tensor(
@@ -1153,7 +1264,10 @@ class MemTransformerLM(nn.Module):
                                      mems=mems_i)
                 hids.append(core_out)
 
-        elif self.attn_type in [24, 25, 26, 34, 35, 44, 45, 46]:  # absolute
+        elif self.attn_type in [24, 25, 26, 34, 35, 44, 45, 46, 54, 64,
+                                74, 80, 90, 104, 114, 124, 134, 144,
+                                204, 224, 234, 244, 254, 324,
+                                924, 934]:  # absolute
             if self.no_pos:
                 core_out = self.drop(word_emb)
             else:

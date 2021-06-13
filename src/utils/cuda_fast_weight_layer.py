@@ -637,7 +637,7 @@ class CudaNormFastWeightPerformerLayer(nn.Module):
 class CudaFastWeightSumLinearTransformerLayer(nn.Module):
     def __init__(self, n_head, d_model, d_head, dropout, dropatt=0,
                  pre_lnorm=False, eps=1e-5, layer_id=None, num_layer=None,
-                 skip_attn_normalization=False):
+                 skip_attn_normalization=False, use_sum_norm=False):
         super(CudaFastWeightSumLinearTransformerLayer, self).__init__()
         print(f"Using CudaFastWeightSumLinearTransformerLayer {layer_id} -")
 
@@ -665,6 +665,7 @@ class CudaFastWeightSumLinearTransformerLayer(nn.Module):
 
         self.pre_lnorm = pre_lnorm
         self.normalize_attn_scores = (not skip_attn_normalization)
+        self.use_sum_norm = use_sum_norm
         self.eps = eps
 
     def forward(self, h, attn_mask=None, mems=None,
@@ -694,8 +695,9 @@ class CudaFastWeightSumLinearTransformerLayer(nn.Module):
         head_k = F.elu(head_k, 1., False) + 1.
 
         # normalize k and q, crucial for stable training.
-        head_k = head_k / head_k.sum(-1, keepdim=True)
-        head_q = head_q / head_q.sum(-1, keepdim=True)
+        if self.use_sum_norm:
+            head_k = head_k / head_k.sum(-1, keepdim=True)
+            head_q = head_q / head_q.sum(-1, keepdim=True)
 
         if self.normalize_attn_scores:
             denominator_acc = torch.cumsum(head_k, dim=2)
@@ -763,7 +765,7 @@ class CudaFastWeightSumLinearTransformerLayer(nn.Module):
 class CudaFastWeightSumPerformerLayer(nn.Module):
     def __init__(self, n_head, d_model, d_head, dropout, dropatt=0,
                  pre_lnorm=False, eps=1e-5, skip_attn_normalization=False,
-                 proj_dim=256, device='cuda'):
+                 proj_dim=256, device='cuda', use_sum_norm=False):
         super(CudaFastWeightSumPerformerLayer, self).__init__()
         print(f"Using CudaFastWeightSumPerformerLayer - "
               f"proj_dim: {proj_dim}")
@@ -787,7 +789,10 @@ class CudaFastWeightSumPerformerLayer(nn.Module):
 
         self.pre_lnorm = pre_lnorm
         self.normalize_attn_scores = (not skip_attn_normalization)
+        self.use_sum_norm = use_sum_norm
         self.eps = eps
+        print(f"normalize_attn_scores: {self.normalize_attn_scores}")
+        print(f"use_sum_norm: {self.use_sum_norm}")
 
         self.proj_dim = proj_dim
         self.proj_matrix = draw_orthogonal_random_matrix(
@@ -820,9 +825,9 @@ class CudaFastWeightSumPerformerLayer(nn.Module):
         head_q = prime(head_q, self.proj_matrix)  # (B, n_head, len, proj_dim)
         head_k = prime(head_k, self.proj_matrix)
 
-        # normalize k and q, crucial for stable training.
-        head_k = head_k / head_k.sum(-1, keepdim=True)
-        head_q = head_q / head_q.sum(-1, keepdim=True)
+        if self.use_sum_norm:
+            head_k = head_k / head_k.sum(-1, keepdim=True)
+            head_q = head_q / head_q.sum(-1, keepdim=True)
 
         if self.normalize_attn_scores:
             denominator_acc = torch.cumsum(head_k, dim=2)
