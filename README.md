@@ -65,5 +65,6 @@ If you make use of this toolkit for your experiments, please cite:
 ```
 
 ## Links
-* The code for synthetic retrieval experiments can be found at [ischlag/fast-weight-transformers](https://github.com/ischlag/fast-weight-transformers).
+* The code for synthetic retrieval experiments in the paper ["Linear Transformers are Secretly Fast Weight Programmers" (ICML 2021)](https://arxiv.org/abs/2102.11174) can be found at [ischlag/fast-weight-transformers](https://github.com/ischlag/fast-weight-transformers).
+* The full repository for the paper "Going Beyond Linear Transformers with Recurrent Fast Weight Programmers" can be found at: [IDSIA/recurrent-fwp](https://github.com/IDSIA/recurrent-fwp)
 * [Jürgen Schmidhuber's AI blog post on Fast Weight Programmers (March 26, 2021)](https://people.idsia.ch/~juergen/fast-weight-programmer-1991-transformer.html).
