@@ -11,6 +11,8 @@ import torch.nn.functional as F
 from utils.proj_adaptive_softmax import ProjectedAdaptiveLogSoftmax
 from utils.log_uniform_sampler import LogUniformSampler, sample_logits
 from utils.performer_helper import prime, draw_orthogonal_random_matrix
+from utils.model_utils import PositionalEmbedding, PositionwiseFF
+
 from utils.fast_weight import StepWiseLinearTransformerLayer
 from utils.fast_weight import StepWiseDPFPLinearTransformerLayer
 from utils.fast_weight import DebugStepWiseLinearTransformerLayer
@@ -22,61 +24,6 @@ from utils.cuda_fast_weight_layer import CudaNormFastWeightLinearTransformerLaye
 from utils.cuda_fast_weight_layer import CudaNormFastWeightPerformerLayer
 from utils.cuda_fast_weight_layer import CudaFastWeightDPFPTransformerLayer
 from utils.cuda_fast_weight_layer import CudaNormFastWeightDPFPTransformerLayer
-
-
-class PositionalEmbedding(nn.Module):
-    def __init__(self, demb):
-        super(PositionalEmbedding, self).__init__()
-
-        self.demb = demb
-
-        inv_freq = 1 / (10000 ** (torch.arange(0.0, demb, 2.0) / demb))
-        self.register_buffer('inv_freq', inv_freq)
-
-    def forward(self, pos_seq, bsz=None):
-        sinusoid_inp = torch.ger(pos_seq, self.inv_freq)
-        pos_emb = torch.cat([sinusoid_inp.sin(), sinusoid_inp.cos()], dim=-1)
-
-        if bsz is not None:
-            return pos_emb[:,None,:].expand(-1, bsz, -1)
-        else:
-            return pos_emb[:,None,:]
-
-
-class PositionwiseFF(nn.Module):
-    def __init__(self, d_model, d_inner, dropout, pre_lnorm=False):
-        super(PositionwiseFF, self).__init__()
-
-        self.d_model = d_model
-        self.d_inner = d_inner
-        self.dropout = dropout
-
-        self.CoreNet = nn.Sequential(
-            nn.Linear(d_model, d_inner), nn.ReLU(inplace=True),
-            nn.Dropout(dropout),
-            nn.Linear(d_inner, d_model),
-            nn.Dropout(dropout),
-        )
-
-        self.layer_norm = nn.LayerNorm(d_model)
-
-        self.pre_lnorm = pre_lnorm
-
-    def forward(self, inp):
-        if self.pre_lnorm:
-            # layer normalization + positionwise feed-forward
-            core_out = self.CoreNet(self.layer_norm(inp))
-
-            # residual connection
-            output = core_out + inp
-        else:
-            # positionwise feed-forward
-            core_out = self.CoreNet(inp)
-
-            # residual connection + layer normalization
-            output = self.layer_norm(inp + core_out)
-
-        return output
 
 
 # Standard multihead attention.
@@ -745,12 +692,12 @@ class DecoderLayer(nn.Module):
             attn_func = LinearMultiHeadAttn
         elif attn_type == 6:
             attn_func = DPFPMultiHeadAttn
+        elif attn_type == 10:
+            attn_func = DebugStepWiseLinearTransformerLayer
         elif attn_type == 14:
             attn_func = StepWiseLinearTransformerLayer
         elif attn_type == 16:
             attn_func = StepWiseDPFPLinearTransformerLayer
-        elif attn_type == 10:
-            attn_func = DebugStepWiseLinearTransformerLayer
         elif attn_type == 24:
             attn_func = CudaFastWeightLinearTransformerLayer
         elif attn_type == 26:
@@ -825,7 +772,7 @@ class RelPartialLearnableDecoderLayer(nn.Module):
 
 
 class AdaptiveEmbedding(nn.Module):
-    def __init__(self, n_token, d_embed, d_proj, cutoffs, div_val=1, 
+    def __init__(self, n_token, d_embed, d_proj, cutoffs, div_val=1,
                  sample_softmax=False):
         super(AdaptiveEmbedding, self).__init__()
 

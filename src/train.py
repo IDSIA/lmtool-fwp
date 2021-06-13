@@ -5,6 +5,7 @@ import argparse
 import time
 import math
 import os, sys
+import subprocess
 import itertools
 from datetime import datetime
 
@@ -14,11 +15,11 @@ import torch.nn as nn
 import torch.optim as optim
 
 from data_utils import get_lm_corpus
-from mem_transformer import MemTransformerLM
+from model_main import MemTransformerLM
+
 from utils.exp_utils import create_exp_dir
 from utils.data_parallel import BalancedDataParallel
 
-print(f'torch version: {torch.__version__}')
 
 parser = argparse.ArgumentParser(
     description='PyTorch Transformer Language Model')
@@ -117,8 +118,10 @@ parser.add_argument('--work_dir', default='LM-TFM', type=str,
                     help='experiment directory.')
 parser.add_argument('--restart', action='store_true',
                     help='restart training from the saved checkpoint')
-parser.add_argument('--restart_dir', type=str, default='',
-                    help='restart dir')
+parser.add_argument('--restart_model', type=str, default=None,
+                    help='full path to the model checkpoint file')
+parser.add_argument('--restart_opt', type=str, default=None,
+                    help='full path to the training state checkpoint file')
 parser.add_argument('--debug', action='store_true',
                     help='run in debug mode (do not create exp dir)')
 parser.add_argument('--same_length', action='store_true',
@@ -202,70 +205,71 @@ if args.use_wandb:  # configure wandb.
 
     config = wandb.config
     config.host = os.uname()[1]  # host node name
-    config.data=args.data
-    config.dataset=args.dataset
-    config.n_layer=args.n_layer
-    config.n_head=args.n_head
-    config.d_head=args.d_head
-    config.d_embed=args.d_embed
-    config.d_model=args.d_model
-    config.d_inner=args.d_inner
-    config.dropout=args.dropout
-    config.dropatt=args.dropatt
-    config.init=args.init
-    config.emb_init=args.emb_init
-    config.init_range=args.init_range
-    config.emb_init_range=args.emb_init_range
-    config.init_std=args.init_std
-    config.proj_init_std=args.proj_init_std
-    config.optim=args.optim
-    config.lr=args.lr
-    config.mom=args.mom
-    config.scheduler=args.scheduler
-    config.warmup_step=args.warmup_step
-    config.decay_rate=args.decay_rate
-    config.lr_min=args.lr_min
-    config.clip=args.clip
-    config.clip_nonemb=args.clip_nonemb
-    config.max_step=args.max_step
-    config.batch_size=args.batch_size
-    config.eval_batch_size=args.eval_batch_size
-    config.batch_chunk=args.batch_chunk
-    config.tgt_len=args.tgt_len
-    config.eval_tgt_len=args.eval_tgt_len
-    config.ext_len=args.ext_len
-    config.mem_len=args.mem_len
-    config.not_tied=args.not_tied
-    config.seed=args.seed
-    config.cuda=args.cuda
-    config.adaptive=args.adaptive
-    config.div_val=args.div_val
-    config.pre_lnorm=args.pre_lnorm
-    config.varlen=args.varlen
-    config.multi_gpu=args.multi_gpu
-    config.log_interval=args.log_interval
-    config.eval_interval=args.eval_interval
-    config.work_dir=args.work_dir
-    config.restart=args.restart
-    config.restart_dir=args.restart_dir
-    config.debug=args.debug
-    config.same_length=args.same_length
-    config.attn_type=args.attn_type
-    config.clamp_len=args.clamp_len
-    config.eta_min=args.eta_min
-    config.gpu0_bsz=args.gpu0_bsz
-    config.max_eval_steps=args.max_eval_steps
-    config.sample_softmax=args.sample_softmax
-    config.patience=args.patience
-    config.finetune_v2=args.finetune_v2
-    config.finetune_v3=args.finetune_v3
-    config.performer_proj_dim=args.performer_proj_dim
-    config.dpfp_n_roll=args.dpfp_n_roll
-    config.carry_over_fast_weight=args.carry_over_fast_weight
-    config.skip_attn_normalization=args.skip_attn_normalization
-    config.no_pos=args.no_pos
-    config.fp16=args.fp16
-    config.static_loss_scale=args.static_loss_scale
+    config.data = args.data
+    config.dataset = args.dataset
+    config.n_layer = args.n_layer
+    config.n_head = args.n_head
+    config.d_head = args.d_head
+    config.d_embed = args.d_embed
+    config.d_model = args.d_model
+    config.d_inner = args.d_inner
+    config.dropout = args.dropout
+    config.dropatt = args.dropatt
+    config.init = args.init
+    config.emb_init = args.emb_init
+    config.init_range = args.init_range
+    config.emb_init_range = args.emb_init_range
+    config.init_std = args.init_std
+    config.proj_init_std = args.proj_init_std
+    config.optim = args.optim
+    config.lr = args.lr
+    config.mom = args.mom
+    config.scheduler = args.scheduler
+    config.warmup_step = args.warmup_step
+    config.decay_rate = args.decay_rate
+    config.lr_min = args.lr_min
+    config.clip = args.clip
+    config.clip_nonemb = args.clip_nonemb
+    config.max_step = args.max_step
+    config.batch_size = args.batch_size
+    config.eval_batch_size = args.eval_batch_size
+    config.batch_chunk = args.batch_chunk
+    config.tgt_len = args.tgt_len
+    config.eval_tgt_len = args.eval_tgt_len
+    config.ext_len = args.ext_len
+    config.mem_len = args.mem_len
+    config.not_tied = args.not_tied
+    config.seed = args.seed
+    config.cuda = args.cuda
+    config.adaptive = args.adaptive
+    config.div_val = args.div_val
+    config.pre_lnorm = args.pre_lnorm
+    config.varlen = args.varlen
+    config.multi_gpu = args.multi_gpu
+    config.log_interval = args.log_interval
+    config.eval_interval = args.eval_interval
+    config.work_dir = args.work_dir
+    config.restart = args.restart
+    config.restart_model = args.restart_model
+    config.restart_opt = args.restart_opt
+    config.debug = args.debug
+    config.same_length = args.same_length
+    config.attn_type = args.attn_type
+    config.clamp_len = args.clamp_len
+    config.eta_min = args.eta_min
+    config.gpu0_bsz = args.gpu0_bsz
+    config.max_eval_steps = args.max_eval_steps
+    config.sample_softmax = args.sample_softmax
+    config.patience = args.patience
+    config.finetune_v2 = args.finetune_v2
+    config.finetune_v3 = args.finetune_v3
+    config.performer_proj_dim = args.performer_proj_dim
+    config.dpfp_n_roll = args.dpfp_n_roll
+    config.carry_over_fast_weight = args.carry_over_fast_weight
+    config.skip_attn_normalization = args.skip_attn_normalization
+    config.no_pos = args.no_pos
+    config.fp16 = args.fp16
+    config.static_loss_scale = args.static_loss_scale
 else:
     use_wandb = False
 
@@ -283,7 +287,10 @@ if args.carry_over_fast_weight:
 args.work_dir = '{}-{}'.format(args.work_dir, args.dataset)
 args.work_dir = os.path.join(args.work_dir, time.strftime('%Y%m%d-%H%M%S'))
 logging = create_exp_dir(args.work_dir, scripts_to_save=None, debug=args.debug)
-# scripts_to_save=['train.py', 'mem_transformer.py']
+
+logging(f'torch version: {torch.__version__}')
+logging(
+    f"Last commit: {subprocess.check_output(['git', 'rev-parse', 'HEAD'])}")
 
 # Set the random seed manually for reproducibility.
 np.random.seed(args.seed)
@@ -412,51 +419,69 @@ def update_dropatt(m):
         m.dropatt.p = args.dropatt
 
 
+model = MemTransformerLM(
+    ntokens,
+    args.n_layer,
+    args.n_head,
+    args.d_model,
+    args.d_head,
+    args.d_inner,
+    args.dropout,
+    args.dropatt,
+    tie_weight=args.tied,
+    d_embed=args.d_embed,
+    div_val=args.div_val,
+    tie_projs=tie_projs,
+    pre_lnorm=args.pre_lnorm,
+    tgt_len=args.tgt_len,
+    ext_len=args.ext_len,
+    mem_len=args.mem_len,
+    cutoffs=cutoffs,
+    same_length=args.same_length,
+    attn_type=args.attn_type,
+    clamp_len=args.clamp_len,
+    sample_softmax=args.sample_softmax,
+    proj_dim=args.performer_proj_dim,
+    n_roll=args.dpfp_n_roll,
+    skip_attn_normalization=args.skip_attn_normalization,
+    no_pos=args.no_pos,
+    device=device,
+)
+logging('=' * 100)
+logging(f"{print(model.word_emb)}")
+logging(f"{print(model.layers)}")
+if model.crit is not None:
+    logging(f"{print(model.crit.out_layers)}")
+
+
 if args.restart:
-    with open(os.path.join(args.restart_dir, 'model.pt'), 'rb') as f:
+    assert args.restart_model is not None, "restart_model required to restart"
+    assert args.restart_opt is not None, "restart_opt required to restart"
+    ckpt_path = args.restart_model
+    opt_path = args.restart_opt
+
+    logging(f"[Restart] Load model from: {ckpt_path}")
+    opt_checkpoint = torch.load(opt_path)
+    last_ep = opt_checkpoint['epoch']
+    last_val_ppl = opt_checkpoint['val_ppl']
+    b_val_ppl = opt_checkpoint['best_val_ppl']
+    b_ep = opt_checkpoint['best_epoch']
+    logging(f"[Restart] Last epoch: {last_ep}, valid ppl: {last_val_ppl:.2f}, "
+            f"best val ppl so far: {b_val_ppl:.2f} at epoch {b_ep}")
+    with open(ckpt_path, 'rb') as f:
         model = torch.load(f)
+
     if not args.fp16:
         model = model.float()
 
     model.apply(update_dropout)
     model.apply(update_dropatt)
-
 else:
-    model = MemTransformerLM(
-        ntokens,
-        args.n_layer,
-        args.n_head,
-        args.d_model,
-        args.d_head,
-        args.d_inner,
-        args.dropout,
-        args.dropatt,
-        tie_weight=args.tied,
-        d_embed=args.d_embed,
-        div_val=args.div_val,
-        tie_projs=tie_projs,
-        pre_lnorm=args.pre_lnorm,
-        tgt_len=args.tgt_len,
-        ext_len=args.ext_len,
-        mem_len=args.mem_len,
-        cutoffs=cutoffs,
-        same_length=args.same_length,
-        attn_type=args.attn_type,
-        clamp_len=args.clamp_len,
-        sample_softmax=args.sample_softmax,
-        proj_dim=args.performer_proj_dim,
-        n_roll=args.dpfp_n_roll,
-        skip_attn_normalization=args.skip_attn_normalization,
-        no_pos=args.no_pos,
-        device=device,
-    )
-
     model.apply(weights_init)
 
     # ensure embedding init is not overridden by
     # out_layer in case of weight sharing
     model.word_emb.apply(weights_init)
-
 
 args.n_all_param = sum([p.nelement() for p in model.parameters()])
 args.n_nonemb_param = sum([p.nelement() for p in model.layers.parameters()])
@@ -506,13 +531,13 @@ elif args.optim.lower() == 'adam':
 elif args.optim.lower() == 'adagrad':
     optimizer = optim.Adagrad(model.parameters(), lr=args.lr)
 
-#### scheduler
+# scheduler
 if args.scheduler == 'cosine':
     # here we do not set eta_min to lr_min to be backward compatible
     # because in previous versions eta_min is default to 0
     # rather than the default value of lr_min 1e-6
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer,
-        args.max_step, eta_min=args.eta_min) # should use eta_min arg
+        args.max_step, eta_min=args.eta_min)  # should use eta_min arg
     if args.sample_softmax > 0:
         # should use eta_min arg
         scheduler_sparse = optim.lr_scheduler.CosineAnnealingLR(
@@ -539,6 +564,7 @@ elif args.scheduler == 'dev_perf':
             patience=args.patience, min_lr=args.lr_min)
 
 elif args.scheduler == 'constant':
+    scheduler = None
     pass
 
 if args.cuda and args.fp16:
@@ -551,12 +577,13 @@ if args.cuda and args.fp16:
                                dynamic_loss_args={'init_scale': 2 ** 16})
 
 if args.restart:
-    if os.path.exists(os.path.join(args.restart_dir, 'optimizer.pt')):
-        with open(os.path.join(args.restart_dir, 'optimizer.pt'), 'rb') as f:
-            opt_state_dict = torch.load(f)
-            optimizer.load_state_dict(opt_state_dict)
-    else:
-        print('Optimizer was not saved. Start from scratch.')
+    optimizer.load_state_dict(opt_checkpoint['optimizer_state_dict'])
+    logging(f"[Restart] Load optimizer states from: {opt_path}")
+    args.warmup_step = 0
+    logging("[Restart] Set warmup step to 0 for warm restarting.")
+    if scheduler is not None:
+        scheduler.load_state_dict(opt_checkpoint['scheduler_state_dict'])
+        logging(f"[Restart] Load scheduler states from: {opt_path}")
 
 logging('=' * 100)
 for k, v in args.__dict__.items():
@@ -569,6 +596,7 @@ logging('#non emb params = {}'.format(args.n_nonemb_param))
 ###############################################################################
 # Training code
 ###############################################################################
+
 
 def evaluate(eval_iter):
     # Turn on evaluation mode which disables dropout.
@@ -608,7 +636,7 @@ def evaluate(eval_iter):
 
 
 def train():
-    global train_step, train_loss, best_val_loss, eval_start_time
+    global train_step, train_loss, best_val_loss, eval_start_time, best_epoch
     global log_start_time
 
     model.train()  # Turn on training mode which enables dropout.
@@ -693,6 +721,7 @@ def train():
                 log_str += ' | ppl {:9.3f}'.format(math.exp(cur_loss))
                 if use_wandb:
                     wandb.log({"ppl": math.exp(cur_loss)})
+                assert not math.isnan(math.exp(cur_loss))
             logging(log_str)
             train_loss = 0
             log_start_time = time.time()
@@ -709,22 +738,14 @@ def train():
                 if use_wandb:
                     wandb.log({"valid_bpc": val_loss / math.log(2)})
             else:
-                log_str += ' | valid ppl {:9.3f}'.format(math.exp(val_loss))
+                val_ppl = math.exp(val_loss)
+                log_str += ' | valid ppl {:9.3f}'.format(val_ppl)
                 if use_wandb:
-                    wandb.log({"valid_ppl": math.exp(val_loss)})
+                    wandb.log({"valid_ppl": val_ppl})
+                assert not math.isnan(val_ppl)
 
             logging(log_str)
             logging('-' * 100)
-            # Save the model if the validation loss is the best so far.
-            if not best_val_loss or val_loss < best_val_loss:
-                if not args.debug:
-                    with open(os.path.join(args.work_dir,
-                                           'model.pt'), 'wb') as f:
-                        torch.save(model, f)
-                    with open(os.path.join(args.work_dir,
-                                           'optimizer.pt'), 'wb') as f:
-                        torch.save(optimizer.state_dict(), f)
-                best_val_loss = val_loss
 
             # dev-performance based learning rate annealing
             if args.scheduler == 'dev_perf':
@@ -732,27 +753,64 @@ def train():
                 if args.sample_softmax > 0:
                     scheduler_sparse.step(val_loss)
 
+            # Save the model if the validation loss is the best so far.
+            if not best_val_loss or val_loss < best_val_loss:
+                if not args.debug:
+                    best_epoch = epoch
+                    logging(f"Best val achieved at epoch {epoch} "
+                            f'{datetime.now().strftime("%Y/%m/%d %H:%M:%S")}')
+                    # Save full model: structure and params.
+                    ckpt_path = os.path.join(args.work_dir, 'best_model.pt')
+                    logging(f"Saving ckpt to {ckpt_path}")
+                    with open(ckpt_path, 'wb') as f:
+                        torch.save(model, f)
+                    # Save training states: optimizer and scheduler states
+                    # for eventual restart.
+                    opt_path = os.path.join(args.work_dir, 'best_opt.pt')
+                    logging(f"Saving training states to {opt_path}")
+                    torch.save({'epoch': epoch,
+                                'optimizer_state_dict': optimizer.state_dict(),
+                                'scheduler_state_dict': scheduler.state_dict(),
+                                'val_ppl': val_ppl}, opt_path)
+                best_val_loss = val_loss
+
+            ckpt_path = os.path.join(args.work_dir, 'latest_model.pt')
+            logging(f"Saving the latest ckpt to {ckpt_path}")
+            with open(ckpt_path, 'wb') as f:
+                torch.save(model, f)
+            opt_path = os.path.join(args.work_dir, 'latest_opt.pt')
+            logging(f"Saving the latest training states to {opt_path}")
+            torch.save({'epoch': epoch,
+                        'best_epoch': best_epoch,
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'scheduler_state_dict': scheduler.state_dict(),
+                        'best_val_ppl': math.exp(best_val_loss),
+                        'val_ppl': val_ppl}, opt_path)
+            logging('-' * 100)
+
             eval_start_time = time.time()
 
         if train_step == args.max_step:
             break
 
+
 # Loop over epochs.
 train_step = 0
 train_loss = 0
 best_val_loss = None
+best_epoch = 0
 
 log_start_time = time.time()
 eval_start_time = time.time()
 
-print(datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+logging(datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
 # At any point you can hit Ctrl + C to break out of training early.
 try:
     for epoch in itertools.count(start=1):
         train()
-        print(f'end of epoch {epoch}: '
-              f'{datetime.now().strftime("%Y/%m/%d %H:%M:%S")}')
+        logging(f'end of epoch {epoch}: '
+                f'{datetime.now().strftime("%Y/%m/%d %H:%M:%S")}')
         if train_step == args.max_step:
             logging('-' * 100)
             logging('End of training')
@@ -763,9 +821,19 @@ except KeyboardInterrupt:
     logging('Exiting from training early')
 
 # Load the best saved model.
-with open(os.path.join(args.work_dir, 'model.pt'), 'rb') as f:
+logging('Evaluation...')
+ckpt_path = os.path.join(args.work_dir, 'best_model.pt')
+logging(f'Load the best ckpt from: {ckpt_path}')
+opt_path = os.path.join(args.work_dir, 'best_opt.pt')
+opt_checkpoint = torch.load(opt_path)
+best_val_ppl = opt_checkpoint['val_ppl']
+best_ep = opt_checkpoint['epoch']
+logging(f'The best valid ppl: {best_val_ppl:.2f} at epoch: {best_ep}')
+
+with open(ckpt_path, 'rb') as f:
     model = torch.load(f)
-para_model = model.to(device)
+
+model = model.to(device)
 
 # Run on test data.
 logging('Evaluation...')

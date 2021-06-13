@@ -36,6 +36,8 @@ parser.add_argument('--cuda', action='store_true',
                     help='use CUDA')
 parser.add_argument('--work_dir', type=str, required=True,
                     help='path to the work_dir')
+parser.add_argument('--model_file', type=str, required=False, default=None,
+                    help='full path of the model file')
 parser.add_argument('--no_log', action='store_true',
                     help='do not log the eval result')
 parser.add_argument('--same_length', action='store_true',
@@ -60,8 +62,20 @@ te_iter = corpus.get_iterator('test', args.batch_size, args.tgt_len,
     device=device, ext_len=args.ext_len)
 
 # Load the best saved model.
-with open(os.path.join(args.work_dir, 'model.pt'), 'rb') as f:
-    print(f'Loading checkpoint from: {f.name}')
+if args.model_file is not None:
+    ckpt_path = args.model_file
+else:  # assume `work_dir` to contain `best_model.pt`
+    ckpt_path = os.path.join(args.work_dir, 'best_model.pt')
+    opt_path = os.path.join(args.work_dir, 'best_opt.pt')
+    assert os.path.exists(opt_path)
+    opt_checkpoint = torch.load(opt_path)
+    best_val_ppl = opt_checkpoint['val_ppl']
+    best_ep = opt_checkpoint['epoch']
+    logging(f'Checkpoint valid ppl: {best_val_ppl:.2f} at epoch: {best_ep}')
+
+assert os.path.exists(ckpt_path)
+print(f'Loading checkpoint from: {ckpt_path}')
+with open(ckpt_path, 'rb') as f:
     model = torch.load(f)
 model.backward_compatible()
 model = model.to(device)

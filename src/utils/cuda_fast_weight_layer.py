@@ -145,6 +145,7 @@ class CudaFastWeightLinearTransformerLayer(nn.Module):
 
         return output
 
+
 # Linear Transformer version
 # our update rule + Katharopoulos et al's ELU based attention
 # with attention normalization
