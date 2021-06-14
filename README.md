@@ -51,8 +51,8 @@ See comments in code for exact locations and modifications.
 Please check files under `example_scripts` for general instructions and examples to train and evaluate models. 
 
 
-## References
-If you make use of this toolkit for your experiments, please cite:
+## BibTex
+
 ```
 @inproceedings{schlag2021linear,
       title={Linear Transformers Are Secretly Fast Weight Programmers}, 
@@ -60,6 +60,15 @@ If you make use of this toolkit for your experiments, please cite:
       booktitle={Proc. Int. Conf. on Machine Learning (ICML)},
       address = {Virtual only},
       month = jul,
+      year={2021}
+}
+```
+
+```
+@article{irie2021going,
+      title={Going Beyond Linear Transformers with Recurrent Fast Weight Programmers}, 
+      author={Kazuki Irie and Imanol Schlag and R\'obert Csord\'as and J\"urgen Schmidhuber},
+      journal={Preprint arXiv:2106.06295},
       year={2021}
 }
 ```
