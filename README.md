@@ -2,7 +2,7 @@
 
 This repository contains the official code used for language modeling experiments in the paper(s):
 * [Linear Transformers are Secretly Fast Weight Programmers (ICML 2021)](https://arxiv.org/abs/2102.11174)
-* [Going Beyond Linear Transformers with Recurrent Fast Weight Programmers](https://arxiv.org) (link coming soon)
+* [Going Beyond Linear Transformers with Recurrent Fast Weight Programmers](https://arxiv.org/abs/2106.06295)
 * ...
 
 More generally, this can be used as a language modeling toolkit in PyTorch to experiment with:
