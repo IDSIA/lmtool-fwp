@@ -495,11 +495,28 @@ if args.restart:
     logging(f"[Restart] Load model from: {ckpt_path}")
     opt_checkpoint = torch.load(opt_path)
     last_ep = opt_checkpoint['epoch']
-    last_val_ppl = opt_checkpoint['val_ppl']
-    b_val_ppl = opt_checkpoint['best_val_ppl']
-    b_ep = opt_checkpoint['best_epoch']
-    logging(f"[Restart] Last epoch: {last_ep}, valid ppl: {last_val_ppl:.2f}, "
-            f"best val ppl so far: {b_val_ppl:.2f} at epoch {b_ep}")
+    if args.dataset in ['enwik8', 'text8']:
+        last_val_bpc = opt_checkpoint['val_loss'] / math.log(2)
+        if 'best_val_loss' in opt_checkpoint:
+            b_val_bpc = opt_checkpoint['best_val_loss'] / math.log(2)
+            b_ep = opt_checkpoint['best_epoch']
+        else:
+            b_val_bpc = last_val_bpc
+            b_ep = last_ep
+        logging(f"[Restart] Last epoch: {last_ep}, "
+                f"valid bpc: {last_val_bpc:.2f}, "
+                f"best val bpc so far: {b_val_bpc:.2f} at epoch {b_ep}")
+    else:
+        last_val_ppl = math.exp(opt_checkpoint['val_loss'])
+        if 'best_val_loss' in opt_checkpoint:
+            b_val_ppl = opt_checkpoint['best_val_loss']
+            b_ep = opt_checkpoint['best_epoch']
+        else:
+            b_val_ppl = last_val_ppl
+            b_ep = last_ep
+        logging(f"[Restart] Last epoch: {last_ep}, "
+                f"valid ppl: {last_val_ppl:.2f}, "
+                f"best val ppl so far: {b_val_ppl:.2f} at epoch {b_ep}")
     with open(ckpt_path, 'rb') as f:
         model = torch.load(f)
     # model.load_state_dict(checkpoint['model_state_dict'])
@@ -804,7 +821,7 @@ def train():
                     torch.save({'epoch': epoch,
                                 'optimizer_state_dict': optimizer.state_dict(),
                                 'scheduler_state_dict': scheduler.state_dict(),
-                                'val_ppl': val_ppl}, opt_path)
+                                'val_loss': val_loss}, opt_path)
                 best_val_loss = val_loss
 
             ckpt_path = os.path.join(args.work_dir, 'latest_model.pt')
@@ -817,8 +834,8 @@ def train():
                         'best_epoch': best_epoch,
                         'optimizer_state_dict': optimizer.state_dict(),
                         'scheduler_state_dict': scheduler.state_dict(),
-                        'best_val_ppl': math.exp(best_val_loss),
-                        'val_ppl': val_ppl}, opt_path)
+                        'best_val_loss': best_val_loss,
+                        'val_loss': val_loss}, opt_path)
             logging('-' * 100)
 
             eval_start_time = time.time()
@@ -859,9 +876,13 @@ ckpt_path = os.path.join(args.work_dir, 'best_model.pt')
 logging(f'Load the best ckpt from: {ckpt_path}')
 opt_path = os.path.join(args.work_dir, 'best_opt.pt')
 opt_checkpoint = torch.load(opt_path)
-best_val_ppl = opt_checkpoint['val_ppl']
 best_ep = opt_checkpoint['epoch']
-logging(f'The best valid ppl: {best_val_ppl:.2f} at epoch: {best_ep}')
+if args.dataset in ['enwik8', 'text8']:
+    best_val_bpc = opt_checkpoint['val_loss'] / math.log(2)
+    logging(f'The best valid bpc: {best_val_bpc:.2f} at epoch: {best_ep}')
+else:
+    best_val_ppl = math.exp(opt_checkpoint['val_loss'])
+    logging(f'The best valid ppl: {best_val_ppl:.2f} at epoch: {best_ep}')
 
 with open(ckpt_path, 'rb') as f:
     model = torch.load(f)
