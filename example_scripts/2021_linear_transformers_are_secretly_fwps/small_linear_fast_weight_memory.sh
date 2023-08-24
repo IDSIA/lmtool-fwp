@@ -22,14 +22,14 @@
 ## --skip_attn_normalization: disable the attn normalisation everywhere.
 ## (this should give the best performance)
 
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=0
 # requires 2 GPUs with 16 GB memory
 
 if [[ $1 == 'train' ]]; then
     echo 'Run training...'
-    python train.py \
+    python /home/kazuki/src/python10-lm/src/train.py \
         --cuda \
-        --data ../data/wikitext-103/ \
+        --data /home/kazuki/src/experiments-copy-trafo-xl-2021/data/wikitext-103/ \
         --dataset wt103 \
         --adaptive \
         --n_layer 16 \
@@ -47,9 +47,8 @@ if [[ $1 == 'train' ]]; then
         --tgt_len 256 \
         --mem_len 0 \
         --eval_tgt_len 256 \
-        --batch_size 96 \
+        --batch_size 8 \
         --multi_gpu \
-        --use_wandb \
         --project_name '2021-01--lm-2048-128' \
         ${@:2}
 

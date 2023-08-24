@@ -27,7 +27,7 @@ While we only used the cuda implementation for all our final experiments (faster
 ## Requirements
 This toolkit requires PyTorch `torch` and Ninja `ninja` (to compile the cuda kernels).
 
-The experiments for the paper were conducted with Python 3.6 and PyTorch 1.4.0.
+The experiments for the paper were conducted with Python 3.6 and PyTorch 1.4.0 (note on Aug 24, 2023: the code also works with Python 3.11 and PyTorch 2.0.1+cu117).
 
 More recent versions of PyTorch are not yet well supported by this toolkit which still uses `torch.nn.DataParallel` for multi-GPU training.
 If you really need to use a more recent version of PyTorch, check the [documentation](https://pytorch.org/docs/stable/generated/torch.nn.DataParallel.html)
