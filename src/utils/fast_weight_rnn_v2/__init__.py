@@ -6,6 +6,7 @@
 #
 # Modifications Copyright (c) 2021 Kazuki Irie
 
+import os
 import sys
 
 import torch
@@ -14,13 +15,13 @@ from torch.utils.cpp_extension import load
 # Just in time import
 # https://pytorch.org/tutorials/advanced/cpp_extens
 
-mod_causal_dot_product_cuda = load(
-    name="fast_rnn_v2_forward",
-    sources=["utils/fast_weight_rnn_v2/fast_rnn_cuda.cu"], verbose=True)
-mod_causal_dot_backward_cuda = load(
-    name="fast_rnn_v2_backward",
-    sources=["utils/fast_weight_rnn_v2/fast_rnn_cuda.cu"], verbose=True)
+dirname = os.path.dirname(__file__)
+filename = os.path.join(dirname, 'fast_rnn_cuda.cu')
 
+mod_causal_dot_product_cuda = load(
+    name="fast_rnn_v2_forward", sources=[filename], verbose=True)
+mod_causal_dot_backward_cuda = load(
+    name="fast_rnn_v2_backward", sources=[filename], verbose=True)
 
 causal_dot_product_cuda = mod_causal_dot_product_cuda.fast_rnn_v2_forward
 causal_dot_backward_cuda = mod_causal_dot_backward_cuda.fast_rnn_v2_backward

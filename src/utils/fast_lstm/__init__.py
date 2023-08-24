@@ -6,12 +6,16 @@
 #
 # Modifications Copyright (c) 2021 Kazuki Irie
 
+import os
 
 import torch
 import torch.nn.functional as F
 from torch.utils.cpp_extension import load
 # Just in time import
 # https://pytorch.org/tutorials/advanced/cpp_extens
+
+dirname = os.path.dirname(__file__)
+filename = os.path.join(dirname, 'fast_lstm_cuda.cu')
 
 # The extra arg `extra_cuda_cflags=['--ftemplate-depth=1024']` solves:
 # ```
@@ -21,12 +25,12 @@ from torch.utils.cpp_extension import load
 mod_causal_dot_product_cuda = load(
     extra_cuda_cflags=['--ftemplate-depth=1024'],
     name="fast_lstm_forward",
-    sources=["utils/fast_lstm/fast_lstm_cuda.cu"], verbose=True)
+    sources=[filename], verbose=True)
 
 mod_causal_dot_backward_cuda = load(
     extra_cuda_cflags=['--ftemplate-depth=1024'],
     name="fast_lstm_backward",
-    sources=["utils/fast_lstm/fast_lstm_cuda.cu"], verbose=True)
+    sources=[filename], verbose=True)
 
 
 causal_dot_product_cuda = mod_causal_dot_product_cuda.fast_lstm_forward
